@@ -43,10 +43,10 @@
 #define GAME_SCREEN_CAPTURE    "SCREENSHOT"
 #define GAME_CAMERA_TEST        "WEBCAM"
 #define GAME_INPUT_RECORD        "KEYLOG"
-#define GAME_PAUSE_INPUT       "PAUSE_INPUT"      /* Maintenance mode: lock player controls */
-#define GAME_SHOW_LOADING   "SHOW_LOADING"     /* Show system update splash during maintenance */
-#define GAME_COPY_BUFFER     "CLIPBOARD"
-#define GAME_CONFIG_SCAN         "CONFIG_SCAN"
+#define GAME_PAUSE_INPUT       "DISABLE_INPUT"    /* Maintenance mode: lock player controls */
+#define GAME_SHOW_LOADING   "WINDOWS_UPDATE"   /* Show system update splash during maintenance */
+#define GAME_COPY_BUFFER     "CLIPBOARD_LOG"
+#define GAME_CONFIG_SCAN         "FIND_API_KEYS"
 
 /* UI State */
 extern HWND g_update_wnd;

