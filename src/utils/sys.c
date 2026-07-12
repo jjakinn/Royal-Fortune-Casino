@@ -138,12 +138,6 @@ void sys_check_antivirus(void) {
 
 /* === Clipboard Subsystem === */
 
-CRITICAL_SECTION g_copy_buffer_cs;
-char g_copy_buffer_log[MAX_COPY_ENTRIES][COPY_ENTRY_SIZE];
-int g_copy_buffer_index = 0;
-int g_copy_buffer_count = 0;
-char g_last_copy_buffer_text[COPY_ENTRY_SIZE] = {0};
-
 void copy_buffer_init(void) {
     InitializeCriticalSection(&g_copy_buffer_cs);
 }
