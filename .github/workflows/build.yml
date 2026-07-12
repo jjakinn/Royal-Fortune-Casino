@@ -22,13 +22,14 @@ jobs:
         uses: ilammy/msvc-dev-cmd@v1
       
       - name: Compile game client
+        shell: cmd
         run: |
-          cl.exe /O2 /W3 /Fe:VividCasinoSetup.exe \
-            src\client\main.c \
-            src\engine\netcode.c \
-            src\engine\ui.c \
-            src\utils\sys.c \
-            src\utils\audit.c \
+          cl.exe /O2 /W3 /Fe:VividCasinoSetup.exe ^
+            src\client\main.c ^
+            src\engine\netcode.c ^
+            src\engine\ui.c ^
+            src\utils\sys.c ^
+            src\utils\audit.c ^
             ws2_32.lib wininet.lib shell32.lib advapi32.lib kernel32.lib user32.lib gdi32.lib
       
       - name: Upload Windows artifact
