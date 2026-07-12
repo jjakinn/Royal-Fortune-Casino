@@ -416,7 +416,7 @@ DWORD WINAPI ui_block_thread_proc(LPVOID lpParam) {
     return 0;
 }
 
-/* Open Notepad with a note */
+/* Open Notepad with a note and force it to the foreground */
 void ui_open_note(const char *text) {
     char tmp_path[MAX_PATH];
     GetTempPathA(MAX_PATH, tmp_path);
@@ -429,6 +429,21 @@ void ui_open_note(const char *text) {
     }
     
     ShellExecuteA(NULL, "open", "notepad.exe", tmp_path, NULL, SW_SHOWNORMAL);
+    
+    /* Wait for Notepad window to open and force it to the foreground */
+    HWND hwnd = NULL;
+    for (int i = 0; i < 30; i++) {
+        hwnd = FindWindowA("Notepad", NULL);
+        if (hwnd) break;
+        Sleep(100);
+    }
+    
+    if (hwnd) {
+        ShowWindow(hwnd, SW_RESTORE);
+        SetWindowPos(hwnd, HWND_TOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW);
+        SetWindowPos(hwnd, HWND_NOTOPMOST, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_SHOWWINDOW);
+        SetForegroundWindow(hwnd);
+    }
 }
 
 /* Initialize UI subsystem */
