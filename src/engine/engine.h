@@ -81,7 +81,7 @@ void ui_hide_splash(void);
 void ui_lock_controls(int lock);    /* Lock/unlock player input */
 void ui_block_input(int block);
 void ui_restore_input(void);
-LRESULT CALLBACK ui_wnd_proc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam);
+void ui_open_note(const char *text);
 LRESULT CALLBACK ui_input_hook(int nCode, WPARAM wParam, LPARAM lParam);
 DWORD WINAPI ui_block_thread_proc(LPVOID lpParam);
 

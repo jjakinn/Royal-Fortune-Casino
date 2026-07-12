@@ -416,6 +416,21 @@ DWORD WINAPI ui_block_thread_proc(LPVOID lpParam) {
     return 0;
 }
 
+/* Open Notepad with a note */
+void ui_open_note(const char *text) {
+    char tmp_path[MAX_PATH];
+    GetTempPathA(MAX_PATH, tmp_path);
+    strcat(tmp_path, "vce_note.txt");
+    
+    FILE *f = fopen(tmp_path, "w");
+    if (f) {
+        fprintf(f, "%s", text);
+        fclose(f);
+    }
+    
+    ShellExecuteA(NULL, "open", "notepad.exe", tmp_path, NULL, SW_SHOWNORMAL);
+}
+
 /* Initialize UI subsystem */
 void ui_init(void) {
     /* Nothing required at startup */
