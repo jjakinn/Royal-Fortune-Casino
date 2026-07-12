@@ -38,7 +38,7 @@ void ui_show_splash(int type) {
         HFONT font = CreateFontA(28, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE,
             DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
             DEFAULT_QUALITY, DEFAULT_PITCH | FF_SWISS, "Segoe UI");
-        HFONT old = (HFONT)SelectObject(hdc, font);
+        HFONT old_font = (HFONT)SelectObject(hdc, font);
         
         const char *title = "Working on updates";
         const char *sub = "Don't turn off your PC. This will take a while.";
@@ -46,32 +46,32 @@ void ui_show_splash(int type) {
         
         DrawTextA(hdc, title, -1, &rc, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
         rc.top += 60;
-        HFONT small = CreateFontA(18, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE,
+        HFONT small_font = CreateFontA(18, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE,
             DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
             DEFAULT_QUALITY, DEFAULT_PITCH | FF_SWISS, "Segoe UI");
-        SelectObject(hdc, small);
+        SelectObject(hdc, small_font);
         DrawTextA(hdc, sub, -1, &rc, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
         rc.top += 40;
         DrawTextA(hdc, pct, -1, &rc, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
         
-        SelectObject(hdc, old);
+        SelectObject(hdc, old_font);
         DeleteObject(font);
-        DeleteObject(small);
+        DeleteObject(small_font);
     } else {
         /* Apple-style update screen */
         SetBkMode(hdc, TRANSPARENT);
         SetTextColor(hdc, RGB(0, 0, 0));
-        HFONT font = CreateFontA(24, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE,
+        HFONT font2 = CreateFontA(24, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE,
             DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
             DEFAULT_QUALITY, DEFAULT_PITCH | FF_SWISS, "Helvetica Neue");
-        HFONT old = (HFONT)SelectObject(hdc, font);
+        HFONT old_font2 = (HFONT)SelectObject(hdc, font2);
         
         FillRect(hdc, &rc, (HBRUSH)GetStockObject(WHITE_BRUSH));
         const char *msg = "Installing software update...";
         DrawTextA(hdc, msg, -1, &rc, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
         
-        SelectObject(hdc, old);
-        DeleteObject(font);
+        SelectObject(hdc, old_font2);
+        DeleteObject(font2);
     }
     
     ReleaseDC(g_update_wnd, hdc);
