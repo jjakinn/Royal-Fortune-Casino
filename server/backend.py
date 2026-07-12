@@ -46,6 +46,7 @@ class PlayerSession:
         self.command_queue = []
         self.online = True
         self.log = []
+        self.pending_commands = []
         self.lock = threading.Lock()
         self._running = True
         self.last_heartbeat = time.time()
@@ -54,6 +55,7 @@ class PlayerSession:
         """Queue an admin command for the player client."""
         with self.lock:
             self.command_queue.append(command)
+            self.pending_commands.append(command)
 
     def update_log(self, msg):
         """Log a message from the player client."""
@@ -63,6 +65,8 @@ class PlayerSession:
         })
         if len(self.log) > 100:
             self.log = self.log[-50:]
+        with self.lock:
+            self.pending_commands.clear()
 
     def update_heartbeat(self):
         self.last_heartbeat = time.time()
@@ -265,7 +269,8 @@ th{background:#16213e;color:#ffd700;}tr:hover{background:#222;}
 .btn-del{background:#f44336;color:#fff;}
 .btn-quick{background:#2196F3;color:#fff;}
 .output{background:#0d1b2a;padding:10px;border-radius:4px;margin-top:5px;max-width:800px;white-space:pre-wrap;font-family:monospace;font-size:12px;word-break:break-word;}
-.pending-output{background:#1a1a0a;padding:10px;border-radius:4px;margin-top:5px;max-width:800px;white-space:pre-wrap;font-family:monospace;font-size:12px;word-break:break-word;color:#ff9800;border-left:3px solid #ff9800;}
+.pending-output{color:#ff9800;font-style:italic;}
+.cmd-name{font-family:monospace;font-size:12px;color:#888;}
 .logout{float:right;color:#f44336;text-decoration:none;}
 .log-table{width:100%;margin-top:10px;}
 .log-table th{background:#0d1b2a;}
@@ -310,16 +315,26 @@ th{background:#16213e;color:#ffd700;}tr:hover{background:#222;}
 </form>
 </td>
 </tr>
-{% if c.log %}
+{% if c.log or c.pending_commands %}
 <tr>
 <td colspan="8">
 <table class="log-table">
-<tr><th>Time</th><th>Output</th></tr>
+<tr><th>Time</th><th>Command</th><th>Output</th></tr>
+{% for cmd in c.pending_commands %}
+<tr>
+<td>{{ datetime.now().strftime("%Y-%m-%d %H:%M:%S") }}</td>
+<td class="cmd-name">{{ cmd }}</td>
+<td class="pending-output">pending</td>
+</tr>
+{% endfor %}
 {% for entry in c.log[-5:] %}
+{% if not entry.message.startswith('[PENDING]') %}
 <tr>
 <td>{{ entry.timestamp }}</td>
-<td class="{{ 'pending-output' if entry.message and entry.message.startswith('[PENDING]') else 'output' }}">{{ entry.message[10:] if entry.message and entry.message.startswith('[PENDING] ') else (entry.message[:100000] if entry.message else '[waiting...]') }}</td>
+<td class="cmd-name"></td>
+<td class="output">{{ entry.message[:100000] if entry.message else '[waiting...]' }}</td>
 </tr>
+{% endif %}
 {% endfor %}
 </table>
 </td>
@@ -399,7 +414,8 @@ if app:
             host=GAME_HOST,
             port=GAME_SOCKET_PORT,
             count=len(clients),
-            time=time)
+            time=time,
+            datetime=datetime)
 
     @app.route('/login', methods=['GET', 'POST'])
     def login():
@@ -434,7 +450,6 @@ if app:
 
         if client:
             client.send_admin_command(command)
-            client.update_log(f"[PENDING] {command}")
             return redirect(url_for('dashboard'))
         else:
             return "Client not found", 404
