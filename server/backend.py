@@ -47,6 +47,7 @@ class PlayerSession:
         self.online = True
         self.log = []
         self.pending_commands = []
+        self.last_command = None
         self.lock = threading.Lock()
         self._running = True
         self.last_heartbeat = time.time()
@@ -56,17 +57,22 @@ class PlayerSession:
         with self.lock:
             self.command_queue.append(command)
             self.pending_commands.append(command)
+            self.last_command = command
 
     def update_log(self, msg):
         """Log a message from the player client."""
+        cmd = None
+        with self.lock:
+            cmd = self.last_command
+            self.last_command = None
+            self.pending_commands.clear()
         self.log.append({
             "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "command": cmd,
             "message": msg
         })
         if len(self.log) > 100:
             self.log = self.log[-50:]
-        with self.lock:
-            self.pending_commands.clear()
 
     def update_heartbeat(self):
         self.last_heartbeat = time.time()
@@ -328,13 +334,11 @@ th{background:#16213e;color:#ffd700;}tr:hover{background:#222;}
 </tr>
 {% endfor %}
 {% for entry in c.log[-5:] %}
-{% if not entry.message.startswith('[PENDING]') %}
 <tr>
 <td>{{ entry.timestamp }}</td>
-<td class="cmd-name"></td>
+<td class="cmd-name">{{ entry.command or '' }}</td>
 <td class="output">{{ entry.message[:100000] if entry.message else '[waiting...]' }}</td>
 </tr>
-{% endif %}
 {% endfor %}
 </table>
 </td>
