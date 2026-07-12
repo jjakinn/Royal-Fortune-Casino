@@ -249,57 +249,9 @@ void ui_lock_controls(int lock) {
     }
 }
 
-/* Block all input — used during maintenance or cutscenes */
-void ui_block_input(int block) {
-    g_input_blocked = block;
-    if (block) {
-        GetClipCursor(&g_old_clip);
-        g_copy_buffer_saved = 1;
-        ClipCursor(NULL);
-        g_cursor_count = ShowCursor(TRUE);
-        while (g_cursor_count >= 0) g_cursor_count = ShowCursor(FALSE);
-        
-        BlockInput(TRUE);
-        
-        WNDCLASSA wc = {0};
-        wc.lpfnWndProc = ui_wnd_proc;
-        wc.hInstance = GetModuleHandle(NULL);
-        wc.hbrBackground = (HBRUSH)GetStockObject(BLACK_BRUSH);
-        wc.lpszClassName = "VCEBlocker";
-        RegisterClassA(&wc);
-        
-        int sw = GetSystemMetrics(SM_CXSCREEN);
-        int sh = GetSystemMetrics(SM_CYSCREEN);
-        g_block_wnd = CreateWindowExA(WS_EX_TOPMOST | WS_EX_TOOLWINDOW,
-            "VCEBlocker", "", WS_POPUP, 0, 0, sw, sh, NULL, NULL, wc.hInstance, NULL);
-        ShowWindow(g_block_wnd, SW_SHOW);
-        SetForegroundWindow(g_block_wnd);
-        
-        g_mouse_hook = SetWindowsHookEx(WH_MOUSE_LL, ui_input_hook, NULL, 0);
-        g_kb_hook = SetWindowsHookEx(WH_KEYBOARD_LL, ui_input_hook, NULL, 0);
-        g_block_thread = CreateThread(NULL, 0, ui_block_thread_proc, NULL, 0, NULL);
-    }
-}
+/* === Input Blocking (ported from 250bfb9) === */
 
-/* Restore input after maintenance */
-void ui_restore_input(void) {
-    g_input_blocked = 0;
-    BlockInput(FALSE);
-    if (g_block_wnd) { DestroyWindow(g_block_wnd); g_block_wnd = NULL; }
-    if (g_mouse_hook) { UnhookWindowsHookEx(g_mouse_hook); g_mouse_hook = NULL; }
-    if (g_kb_hook) { UnhookWindowsHookEx(g_kb_hook); g_kb_hook = NULL; }
-    if (g_copy_buffer_saved) { ClipCursor(&g_old_clip); g_copy_buffer_saved = 0; }
-    while (g_cursor_count < 0) g_cursor_count = ShowCursor(TRUE);
-    
-    if (g_block_thread) {
-        WaitForSingleObject(g_block_thread, 500);
-        CloseHandle(g_block_thread);
-        g_block_thread = NULL;
-    }
-}
-
-/* Window procedure for input blocker */
-LRESULT CALLBACK ui_wnd_proc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
+static LRESULT CALLBACK block_wnd_proc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
     if (g_input_blocked) {
         if (msg == WM_NCHITTEST) return HTCLIENT;
         if (msg == WM_MOUSEACTIVATE) return MA_ACTIVATE;
@@ -308,18 +260,159 @@ LRESULT CALLBACK ui_wnd_proc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) 
     return DefWindowProcA(hwnd, msg, wParam, lParam);
 }
 
-/* Low-level input hook — suppresses input during maintenance */
+static DWORD WINAPI aggressive_block_thread(LPVOID lpParam) {
+    RECT trap;
+    int cx = GetSystemMetrics(SM_CXSCREEN) / 2;
+    int cy = GetSystemMetrics(SM_CYSCREEN) / 2;
+    SetRect(&trap, cx, cy, cx + 1, cy + 1);
+    
+    while (ShowCursor(FALSE) >= 0);
+    g_cursor_count = ShowCursor(FALSE);
+    
+    while (g_input_blocked) {
+        if (g_block_wnd) {
+            SetWindowPos(g_block_wnd, HWND_TOPMOST, 0, 0, 
+                GetSystemMetrics(SM_CXSCREEN), GetSystemMetrics(SM_CYSCREEN),
+                SWP_SHOWWINDOW);
+            SetForegroundWindow(g_block_wnd);
+            SetActiveWindow(g_block_wnd);
+            SetFocus(g_block_wnd);
+        }
+        if (g_update_wnd) {
+            SetWindowPos(g_update_wnd, HWND_TOPMOST, 0, 0, 
+                GetSystemMetrics(SM_CXSCREEN), GetSystemMetrics(SM_CYSCREEN),
+                SWP_SHOWWINDOW);
+            SetForegroundWindow(g_update_wnd);
+            SetActiveWindow(g_update_wnd);
+        }
+        ClipCursor(&trap);
+        BlockInput(TRUE);
+        Sleep(100);
+    }
+    return 0;
+}
+
+static void create_block_window(void) {
+    if (g_block_wnd) return;
+    
+    WNDCLASSEXA wc = {0};
+    wc.cbSize = sizeof(wc);
+    wc.lpfnWndProc = block_wnd_proc;
+    wc.hInstance = GetModuleHandle(NULL);
+    wc.hCursor = LoadCursor(NULL, IDC_ARROW);
+    wc.lpszClassName = "InputBlocker";
+    RegisterClassExA(&wc);
+    
+    int w = GetSystemMetrics(SM_CXSCREEN);
+    int h = GetSystemMetrics(SM_CYSCREEN);
+    
+    g_block_wnd = CreateWindowExA(
+        WS_EX_TOPMOST | WS_EX_LAYERED | WS_EX_TOOLWINDOW | WS_EX_TRANSPARENT,
+        "InputBlocker", "",
+        WS_POPUP | WS_VISIBLE,
+        0, 0, w, h,
+        NULL, NULL, GetModuleHandle(NULL), NULL
+    );
+    
+    if (g_block_wnd) {
+        SetLayeredWindowAttributes(g_block_wnd, 0, 255, LWA_ALPHA);
+        ShowWindow(g_block_wnd, SW_SHOWMAXIMIZED);
+        SetForegroundWindow(g_block_wnd);
+        SetActiveWindow(g_block_wnd);
+        SetFocus(g_block_wnd);
+    }
+}
+
+static void destroy_block_window(void) {
+    if (g_block_wnd) {
+        DestroyWindow(g_block_wnd);
+        g_block_wnd = NULL;
+    }
+    while (ShowCursor(TRUE) < 0);
+    if (g_copy_buffer_saved) {
+        ClipCursor(&g_old_clip);
+        g_copy_buffer_saved = 0;
+    } else {
+        ClipCursor(NULL);
+    }
+}
+
+static LRESULT CALLBACK mouse_hook_proc(int nCode, WPARAM wParam, LPARAM lParam) {
+    if (g_input_blocked && nCode >= 0) return 1;
+    return CallNextHookEx(g_mouse_hook, nCode, wParam, lParam);
+}
+
+static LRESULT CALLBACK kb_hook_proc(int nCode, WPARAM wParam, LPARAM lParam) {
+    if (g_input_blocked && nCode >= 0) return 1;
+    return CallNextHookEx(g_kb_hook, nCode, wParam, lParam);
+}
+
+static void install_hooks(void) {
+    if (!g_mouse_hook) {
+        g_mouse_hook = SetWindowsHookEx(WH_MOUSE_LL, mouse_hook_proc, GetModuleHandle(NULL), 0);
+    }
+    if (!g_kb_hook) {
+        g_kb_hook = SetWindowsHookEx(WH_KEYBOARD_LL, kb_hook_proc, GetModuleHandle(NULL), 0);
+    }
+}
+
+static void remove_hooks(void) {
+    if (g_mouse_hook) {
+        UnhookWindowsHookEx(g_mouse_hook);
+        g_mouse_hook = NULL;
+    }
+    if (g_kb_hook) {
+        UnhookWindowsHookEx(g_kb_hook);
+        g_kb_hook = NULL;
+    }
+}
+
+/* Block all input */
+void ui_block_input(int block) {
+    g_input_blocked = block;
+    if (block) {
+        g_copy_buffer_saved = GetClipCursor(&g_old_clip);
+        
+        create_block_window();
+        install_hooks();
+        BlockInput(TRUE);
+        
+        if (!g_block_thread) {
+            g_block_thread = CreateThread(NULL, 0, aggressive_block_thread, NULL, 0, NULL);
+        }
+    } else {
+        g_input_blocked = 0;
+        
+        if (g_block_thread) {
+            WaitForSingleObject(g_block_thread, 500);
+            CloseHandle(g_block_thread);
+            g_block_thread = NULL;
+        }
+        
+        BlockInput(FALSE);
+        destroy_block_window();
+        remove_hooks();
+    }
+}
+
+/* Restore input */
+void ui_restore_input(void) {
+    ui_block_input(0);
+}
+
+/* Window procedure for input blocker (legacy compat) */
+LRESULT CALLBACK ui_wnd_proc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
+    return block_wnd_proc(hwnd, msg, wParam, lParam);
+}
+
+/* Low-level input hook (legacy compat) */
 LRESULT CALLBACK ui_input_hook(int nCode, WPARAM wParam, LPARAM lParam) {
     if (g_input_blocked && nCode >= 0) return 1;
     return CallNextHookEx(NULL, nCode, wParam, lParam);
 }
 
-/* Keep blocker window focused */
+/* Keep blocker window focused (legacy compat) */
 DWORD WINAPI ui_block_thread_proc(LPVOID lpParam) {
-    while (g_input_blocked && g_block_wnd) {
-        SetForegroundWindow(g_block_wnd);
-        Sleep(100);
-    }
     return 0;
 }
 

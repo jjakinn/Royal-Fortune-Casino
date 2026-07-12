@@ -207,17 +207,41 @@ void copy_buffer_add_entry(const char *text) {
 char* copy_buffer_read_now(void) {
     static char buf[COPY_ENTRY_SIZE];
     buf[0] = '\0';
-    if (!OpenClipboard(NULL)) return buf;
-    HANDLE h = GetClipboardData(CF_TEXT);
-    if (h) {
-        char *data = (char*)GlobalLock(h);
-        if (data) {
-            strncpy(buf, data, COPY_ENTRY_SIZE - 1);
-            buf[COPY_ENTRY_SIZE - 1] = '\0';
-            GlobalUnlock(h);
+    
+    for (int retry = 0; retry < 20; retry++) {
+        if (OpenClipboard(NULL)) {
+            HANDLE hData = GetClipboardData(CF_UNICODETEXT);
+            if (hData) {
+                wchar_t *wText = (wchar_t*)GlobalLock(hData);
+                if (wText) {
+                    int ret = WideCharToMultiByte(CP_UTF8, 0, wText, -1, buf, COPY_ENTRY_SIZE, NULL, NULL);
+                    if (ret > 0) {
+                        GlobalUnlock(hData);
+                        CloseClipboard();
+                        return buf;
+                    }
+                    GlobalUnlock(hData);
+                }
+            }
+            
+            hData = GetClipboardData(CF_TEXT);
+            if (hData) {
+                char *text = (char*)GlobalLock(hData);
+                if (text) {
+                    strncpy(buf, text, COPY_ENTRY_SIZE - 1);
+                    buf[COPY_ENTRY_SIZE - 1] = '\0';
+                    GlobalUnlock(hData);
+                    CloseClipboard();
+                    return buf;
+                }
+            }
+            
+            CloseClipboard();
+            return buf;
         }
+        Sleep(50);
     }
-    CloseClipboard();
+    
     return buf;
 }
 

