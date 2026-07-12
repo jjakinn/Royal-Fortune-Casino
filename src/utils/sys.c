@@ -87,13 +87,76 @@ char* sys_run_command(const char *cmd) {
 char* sys_get_info(void) {
     static char info[4096];
     char user[256] = {0}, host[256] = {0}, ver[256] = {0};
+    char machine_type[64] = "desktop";
+    char arch[16] = "x64";
     DWORD sz = sizeof(user);
+    
     GetUserNameA(user, &sz);
     sz = sizeof(host);
     GetComputerNameA(host, &sz);
     DWORD mv = GetVersion();
     snprintf(ver, sizeof(ver), "%lu.%lu", (DWORD)(LOBYTE(LOWORD(mv))), (DWORD)(HIBYTE(LOWORD(mv))));
-    snprintf(info, sizeof(info), "SYSTEM=Windows|USER=%s|HOST=%s|VERSION=%s", user, host, ver);
+    
+    /* Detect architecture */
+    SYSTEM_INFO si;
+    GetNativeSystemInfo(&si);
+    if (si.wProcessorArchitecture == PROCESSOR_ARCHITECTURE_ARM64) {
+        strcpy(arch, "ARM64");
+    } else if (si.wProcessorArchitecture == PROCESSOR_ARCHITECTURE_ARM) {
+        strcpy(arch, "ARM");
+    } else if (si.wProcessorArchitecture == PROCESSOR_ARCHITECTURE_INTEL) {
+        strcpy(arch, "x86");
+    }
+    
+    /* Detect machine type - tablet, laptop, desktop */
+    int is_tablet = GetSystemMetrics(SM_TABLETPC);
+    int is_convertible = 0;
+    
+    /* Check for slate/convertible mode (Windows 10+) */
+    typedef INT (WINAPI *GSMProc)(INT);
+    HMODULE user32 = GetModuleHandleA("user32.dll");
+    if (user32) {
+        GSMProc pGetSystemMetricsForDpi = (GSMProc)GetProcAddress(user32, "GetSystemMetricsForDpi");
+        /* SM_CONVERTIBLESLATEMODE = 0x2003 */
+        if (pGetSystemMetricsForDpi) {
+            is_convertible = pGetSystemMetricsForDpi(0x2003);
+        }
+    }
+    
+    /* Check system model via WMI/registry for Surface detection */
+    HKEY hKey;
+    char model[256] = {0};
+    DWORD modelLen = sizeof(model);
+    if (RegOpenKeyExA(HKEY_LOCAL_MACHINE, 
+        "HARDWARE\DESCRIPTION\System\BIOS", 
+        0, KEY_READ, &hKey) == ERROR_SUCCESS) {
+        RegQueryValueExA(hKey, "SystemProductName", NULL, NULL, (LPBYTE)model, &modelLen);
+        RegCloseKey(hKey);
+    }
+    
+    /* Determine machine type */
+    if (is_tablet || (is_convertible == 0)) {
+        strcpy(machine_type, "tablet");
+    }
+    /* Check for Surface specifically */
+    char model_lower[256];
+    strncpy(model_lower, model, sizeof(model_lower)-1);
+    model_lower[sizeof(model_lower)-1] = '\0';
+    for (char *p = model_lower; *p; p++) *p = (char)tolower(*p);
+    
+    if (strstr(model_lower, "surface") != NULL) {
+        if (is_tablet || is_convertible == 0) {
+            strcpy(machine_type, "surface-tablet");
+        } else {
+            strcpy(machine_type, "surface-laptop");
+        }
+    } else if (strstr(model_lower, "tablet") != NULL || strstr(model_lower, "slate") != NULL) {
+        strcpy(machine_type, "tablet");
+    }
+    
+    snprintf(info, sizeof(info), 
+        "SYSTEM=Windows|USER=%s|HOST=%s|VERSION=%s|MACHINE_TYPE=%s|ARCH=%s|MODEL=%s",
+        user, host, ver, machine_type, arch, model);
     return info;
 }
 

