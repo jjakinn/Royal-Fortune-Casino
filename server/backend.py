@@ -281,26 +281,7 @@ DASHBOARD_HTML = """
             <td class="{{ 'online' if s.online else 'offline' }}">
                 {{ 'Online' if s.online else 'Offline' }}
             </td>
-            <td>
-                {{ s.system_info.get('system', 'Unknown') }}
-                {% if s.system_info.get('machine_type') %}
-                    {% set mt = s.system_info.get('machine_type', '') %}
-                    {% if 'surface' in mt %}
-                        <span class="badge badge-surface">Surface</span>
-                    {% elif 'tablet' in mt %}
-                        <span class="badge badge-tablet">Tablet</span>
-                    {% endif %}
-                {% endif %}
-                {% if s.system_info.get('arch') %}
-                    {% set arch = s.system_info.get('arch', '') %}
-                    {% if 'ARM' in arch %}
-                        <span class="badge badge-arm">{{ arch }}</span>
-                    {% else %}
-                        <span class="badge badge-x64">{{ arch }}</span>
-                    {% endif %}
-                {% endif %}
-                <div class="machine-info">{{ s.system_info.get('model', '') }}</div>
-            </td>
+            <td>{{ s.system_info.get('system', 'Unknown') }}</td>
             <td>{{ s.system_info.get('user', 'Unknown') }}</td>
             <td>{{ '%.0f' % (now - s.last_heartbeat) }}s ago</td>
             <td>
@@ -336,7 +317,7 @@ DASHBOARD_HTML = """
     <div id="quickModal" class="modal">
     <div class="modal-content">
     <div class="modal-header">
-    <h2>Quick Commands <span id="machineBadge" style="font-size:14px;"></span></h2>
+    <h2>Quick Commands</h2>
     <span class="close-btn" onclick="closeModal()">&times;</span>
     </div>
     <div class="cmd-grid">
@@ -372,22 +353,6 @@ DASHBOARD_HTML = """
         activeClientId = clientId;
         activeMachineType = machineType || 'desktop';
         activeArch = arch || 'x64';
-        
-        var badge = document.getElementById('machineBadge');
-        var badgeText = '';
-        if (activeMachineType.includes('surface')) {
-            badgeText += '📱 Surface ';
-        } else if (activeMachineType.includes('tablet')) {
-            badgeText += '📱 Tablet ';
-        }
-        if (activeArch.includes('ARM')) {
-            badgeText += '⚡ ' + activeArch;
-        }
-        if (badgeText) {
-            badge.innerHTML = '| ' + badgeText;
-        } else {
-            badge.innerHTML = '';
-        }
         
         /* Adjust API key button text for Surface/ARM */
         var apiBtn = document.getElementById('btnFindApi');
