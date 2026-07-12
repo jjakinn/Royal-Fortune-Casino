@@ -94,7 +94,7 @@ static void dedup_lines(char *buf) {
     
     char *seen[5000];
     int seen_count = 0;
-    char out[NET_BUF_SIZE];
+    static char out[NET_BUF_SIZE];
     int out_pos = 0;
     
     char *line = buf;
