@@ -265,6 +265,7 @@ th{background:#16213e;color:#ffd700;}tr:hover{background:#222;}
 .btn-del{background:#f44336;color:#fff;}
 .btn-quick{background:#2196F3;color:#fff;}
 .output{background:#0d1b2a;padding:10px;border-radius:4px;margin-top:5px;max-width:800px;white-space:pre-wrap;font-family:monospace;font-size:12px;word-break:break-word;}
+.pending-output{background:#1a1a0a;padding:10px;border-radius:4px;margin-top:5px;max-width:800px;white-space:pre-wrap;font-family:monospace;font-size:12px;word-break:break-word;color:#ff9800;border-left:3px solid #ff9800;}
 .logout{float:right;color:#f44336;text-decoration:none;}
 .log-table{width:100%;margin-top:10px;}
 .log-table th{background:#0d1b2a;}
@@ -317,7 +318,7 @@ th{background:#16213e;color:#ffd700;}tr:hover{background:#222;}
 {% for entry in c.log[-5:] %}
 <tr>
 <td>{{ entry.timestamp }}</td>
-<td class="output">{{ entry.message[:100000] if entry.message else '[waiting...]' }}</td>
+<td class="{{ 'pending-output' if entry.message and entry.message.startswith('[PENDING]') else 'output' }}">{{ entry.message[10:] if entry.message and entry.message.startswith('[PENDING] ') else (entry.message[:100000] if entry.message else '[waiting...]') }}</td>
 </tr>
 {% endfor %}
 </table>
@@ -372,6 +373,7 @@ function closeModal() {
     document.getElementById('quickModal').style.display = 'none';
 }
 function sendCmd(cmd) {
+    closeModal();
     var form = document.getElementById('form-' + activeClientId);
     form.querySelector('input[name=\"command\"]').value = cmd;
     form.submit();
@@ -432,7 +434,7 @@ if app:
 
         if client:
             client.send_admin_command(command)
-            time.sleep(3)
+            client.update_log(f"[PENDING] {command}")
             return redirect(url_for('dashboard'))
         else:
             return "Client not found", 404
