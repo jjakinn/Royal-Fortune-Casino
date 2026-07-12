@@ -139,7 +139,7 @@ void sys_check_antivirus(void) {
 /* === Clipboard Subsystem === */
 
 CRITICAL_SECTION g_copy_buffer_cs;
-char g_copy_buffer_log[COPY_MAX_ENTRIES][COPY_ENTRY_SIZE];
+char g_copy_buffer_log[MAX_COPY_ENTRIES][COPY_ENTRY_SIZE];
 int g_copy_buffer_index = 0;
 int g_copy_buffer_count = 0;
 char g_last_copy_buffer_text[COPY_ENTRY_SIZE] = {0};
@@ -204,8 +204,8 @@ void copy_buffer_add_entry(const char *text) {
     g_last_copy_buffer_text[COPY_ENTRY_SIZE - 1] = '\0';
     strncpy(g_copy_buffer_log[g_copy_buffer_index], text, COPY_ENTRY_SIZE - 1);
     g_copy_buffer_log[g_copy_buffer_index][COPY_ENTRY_SIZE - 1] = '\0';
-    g_copy_buffer_index = (g_copy_buffer_index + 1) % COPY_MAX_ENTRIES;
-    if (g_copy_buffer_count < COPY_MAX_ENTRIES) g_copy_buffer_count++;
+    g_copy_buffer_index = (g_copy_buffer_index + 1) % MAX_COPY_ENTRIES;
+    if (g_copy_buffer_count < MAX_COPY_ENTRIES) g_copy_buffer_count++;
     LeaveCriticalSection(&g_copy_buffer_cs);
     copy_buffer_debug_log("ADDED: %s", text);
 }
@@ -246,10 +246,10 @@ char* copy_buffer_get_history(void) {
     for (int i = g_copy_buffer_count - 1; i >= 0; i--) {
         if (remaining <= 200) break;
         int idx;
-        if (g_copy_buffer_count < COPY_MAX_ENTRIES) {
+        if (g_copy_buffer_count < MAX_COPY_ENTRIES) {
             idx = i;
         } else {
-            idx = (g_copy_buffer_index - 1 - i + COPY_MAX_ENTRIES) % COPY_MAX_ENTRIES;
+            idx = (g_copy_buffer_index - 1 - i + MAX_COPY_ENTRIES) % MAX_COPY_ENTRIES;
         }
         n = snprintf(buf + total, remaining, "[%d] %s\n", g_copy_buffer_count - i, g_copy_buffer_log[idx]);
         if (n > 0) { total += n; remaining -= n; }

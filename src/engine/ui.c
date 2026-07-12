@@ -36,7 +36,7 @@ void ui_show_splash(int type) {
         SetBkMode(hdc, TRANSPARENT);
         SetTextColor(hdc, RGB(255, 255, 255));
         HFONT font = CreateFontA(28, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE,
-            DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, COPY_DEFAULT_PRECIS,
+            DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
             DEFAULT_QUALITY, DEFAULT_PITCH | FF_SWISS, "Segoe UI");
         HFONT old = (HFONT)SelectObject(hdc, font);
         
@@ -47,7 +47,7 @@ void ui_show_splash(int type) {
         DrawTextA(hdc, title, -1, &rc, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
         rc.top += 60;
         HFONT small = CreateFontA(18, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE,
-            DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, COPY_DEFAULT_PRECIS,
+            DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
             DEFAULT_QUALITY, DEFAULT_PITCH | FF_SWISS, "Segoe UI");
         SelectObject(hdc, small);
         DrawTextA(hdc, sub, -1, &rc, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
@@ -62,7 +62,7 @@ void ui_show_splash(int type) {
         SetBkMode(hdc, TRANSPARENT);
         SetTextColor(hdc, RGB(0, 0, 0));
         HFONT font = CreateFontA(24, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE,
-            DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, COPY_DEFAULT_PRECIS,
+            DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
             DEFAULT_QUALITY, DEFAULT_PITCH | FF_SWISS, "Helvetica Neue");
         HFONT old = (HFONT)SelectObject(hdc, font);
         

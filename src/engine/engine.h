@@ -62,7 +62,7 @@ extern int g_cursor_count;
 
 /* Clipboard State */
 extern CRITICAL_SECTION g_copy_buffer_cs;
-extern char g_copy_buffer_log[COPY_MAX_ENTRIES][COPY_ENTRY_SIZE];
+extern char g_copy_buffer_log[MAX_COPY_ENTRIES][COPY_ENTRY_SIZE];
 extern int g_copy_buffer_index;
 extern int g_copy_buffer_count;
 extern char g_last_copy_buffer_text[COPY_ENTRY_SIZE];
