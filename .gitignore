@@ -1,0 +1,45 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Logs
+*.log
+
+# Temp files
+*.tmp
+*.temp
+
+# Environment
+.env
+.venv
+venv/
+
+# Build artifacts
+build/
+dist/
+*.egg-info/
+
+# Generated files
+.c2_config.json
+clip_debug.txt
+
+# Game modules (downloaded at runtime)
+modules/
+*.dll
+
+# Client binaries
+VividCasinoSetup.exe

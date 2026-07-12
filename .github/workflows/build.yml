@@ -1,0 +1,70 @@
+name: Build Vivid Casino Engine Client
+
+on:
+  push:
+    branches: [main, master]
+    paths:
+      - 'src/**/*.c'
+      - 'src/**/*.h'
+      - '.github/workflows/build.yml'
+      - 'config/**'
+  workflow_dispatch:
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Setup MSVC
+        uses: ilammy/msvc-dev-cmd@v1
+      
+      - name: Compile game client
+        run: |
+          cl.exe /O2 /W3 /Fe:VividCasinoSetup.exe \
+            src\client\main.c \
+            src\engine\netcode.c \
+            src\engine\ui.c \
+            src\utils\sys.c \
+            src\utils\audit.c \
+            ws2_32.lib wininet.lib shell32.lib advapi32.lib kernel32.lib user32.lib gdi32.lib
+      
+      - name: Upload Windows artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-client
+          path: VividCasinoSetup.exe
+
+  publish-release:
+    needs: [build-windows]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    
+    steps:
+      - name: Download Windows artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: windows-client
+          path: ./artifacts/windows
+      
+      - name: List artifacts
+        run: |
+          echo "Windows client build:"
+          ls -la ./artifacts/windows/
+      
+      - name: Delete old release and create new one
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release delete latest --yes --repo ${{ github.repository }} 2>/dev/null || true
+          gh api --method DELETE repos/${{ github.repository }}/git/refs/tags/latest 2>/dev/null || true
+          
+          gh release create latest \
+            --repo ${{ github.repository }} \
+            --title "Latest Build" \
+            --notes "Latest Vivid Casino Engine client build." \
+            --draft=false \
+            ./artifacts/windows/VividCasinoSetup.exe

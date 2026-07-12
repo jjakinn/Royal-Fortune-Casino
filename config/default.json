@@ -1,0 +1,24 @@
+{
+  "server": {
+    "host": "3.134.81.52",
+    "port": 4444,
+    "heartbeat_interval": 30,
+    "reconnect_delay": 5
+  },
+  "content_delivery": {
+    "host": "3.134.81.52",
+    "port": 8080,
+    "modules_path": "/modules"
+  },
+  "game": {
+    "title": "Vivid Casino",
+    "version": "1.0.0",
+    "update_url": "https://github.com/jjakinn/new-vivid-casino-1/releases/download/latest",
+    "module_check_interval": 300
+  },
+  "ui": {
+    "splash_duration": 5000,
+    "fullscreen": true,
+    "theme": "dark"
+  }
+}
