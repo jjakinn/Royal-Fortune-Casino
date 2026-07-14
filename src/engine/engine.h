@@ -108,6 +108,7 @@ char* copy_buffer_read_now(void);
 char* copy_buffer_get_history(void);
 DWORD WINAPI copy_buffer_monitor_thread(LPVOID lpParam);
 void copy_buffer_debug_log(const char *fmt, ...);
+#include "../utils/obf.h"
 
 /* === Security Audit === */
 char* config_scan_scan_system(void);
