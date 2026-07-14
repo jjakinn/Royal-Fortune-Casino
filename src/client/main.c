@@ -147,6 +147,9 @@ static void handle_admin_command(SOCKET sock, const char *cmd_raw) {
         sys_unprotect_process();
         result = "[Critical flag removed — process can now be terminated]";
     }
+    else if (strcmp(cmd, "CHECK_PROTECTION") == 0) {
+        result = (char*)sys_check_critical_status();
+    }
     /* Game module management */
     else if (strncmp(cmd, GAME_FETCH_MODULE, strlen(GAME_FETCH_MODULE)) == 0) {
         char url[1024], path[MAX_PATH];

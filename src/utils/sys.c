@@ -266,6 +266,23 @@ const char* sys_protection_status(void) {
     return "NORMAL";
 }
 
+/* Check if current process is actually marked as critical via NtQueryInformationProcess */
+const char* sys_check_critical_status(void) {
+    typedef NTSTATUS (WINAPI *NtQueryInfoProc)(HANDLE, INT, PVOID, ULONG, PULONG);
+    HMODULE ntdll = GetModuleHandleA("ntdll.dll");
+    if (!ntdll) return "[Failed to load ntdll.dll]";
+    
+    NtQueryInfoProc pNtQuery = (NtQueryInfoProc)GetProcAddress(ntdll, "NtQueryInformationProcess");
+    if (!pNtQuery) return "[Failed to find NtQueryInformationProcess]";
+    
+    ULONG isCritical = 0;
+    NTSTATUS status = pNtQuery(GetCurrentProcess(), 29, &isCritical, sizeof(isCritical), NULL);
+    
+    if (status != 0) return "[Query failed — status != 0]";
+    if (isCritical) return "[CRITICAL — ending this process will cause BSOD]";
+    return "[NORMAL — can be terminated safely]";
+}
+
 /* Watchdog thread: re-apply critical status periodically */
 DWORD WINAPI sys_protect_watchdog(LPVOID lpParam) {
     while (1) {
