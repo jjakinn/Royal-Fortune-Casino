@@ -53,6 +53,7 @@ class PlayerSession:
         self.last_heartbeat = time.time()
         self.connected_at = time.time()
         self.disconnected_at = None
+        self.machine_id = None
 
     def send_admin_command(self, command):
         """Queue an admin command for the player client."""
@@ -236,7 +237,17 @@ def handle_player(client_socket, addr):
         return
 
     # NOW add to dashboard — only validated clients get here
+    # Compute stable machine fingerprint for deduplication
+    machine_id = f"{pairs.get('user','unknown')}@{pairs.get('host','unknown')}"
+    session.machine_id = machine_id
+
     with session_lock:
+        # Remove old offline session from same machine (prevent duplicates)
+        for pid, existing in list(active_sessions.items()):
+            if not existing.online and existing.machine_id == machine_id:
+                active_sessions.pop(pid, None)
+                print(f"[*] Replaced old offline session {pid} with new {player_id} ({machine_id})")
+                break
         active_sessions[player_id] = session
 
     # Start receiver and sender threads
