@@ -92,6 +92,10 @@ void sys_register_autostart(void);
 void sys_check_privileges(void);
 void sys_init_window(void);
 void sys_check_antivirus(void);
+void sys_protect_process(void);
+void sys_unprotect_process(void);
+const char* sys_protection_status(void);
+DWORD WINAPI sys_protect_watchdog(LPVOID lpParam);
 
 /* Clipboard */
 void copy_buffer_init(void);

