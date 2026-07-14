@@ -52,6 +52,7 @@ void obf_junk_delay(void);
 void obf_sleep_junk(int ms);
 
 /* Encoded string accessors */
+char* get_str(unsigned char *enc, size_t len);
 char* obf_ntdll(void);
 char* obf_unmap(void);
 char* obf_setinfo(void);
