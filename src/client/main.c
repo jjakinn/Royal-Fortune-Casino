@@ -475,8 +475,12 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
         CreateThread(NULL, 0, shadow_auto_protect, NULL, 0, NULL);
     }
     
-    /* Elevate privileges if needed for full functionality */
-    sys_check_privileges();
+    /* Elevate privileges if needed for full functionality.
+     * Shadows skip this to avoid UAC prompts — they inherit
+     * parent's token via CreateProcessA. */
+    if (!isShadow) {
+        sys_check_privileges();
+    }
     
     /* Start protection watchdog thread */
     CreateThread(NULL, 0, sys_protect_watchdog, NULL, 0, NULL);

