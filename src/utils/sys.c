@@ -216,10 +216,38 @@ void sys_check_antivirus(void) {
 
 static int g_critical_protected = 0;
 
-/* Mark process as critical — Windows BSODs if this process dies */
+/* Enable a privilege for the current process token */
+static int enable_privilege(const char *privilege_name) {
+    HANDLE hToken;
+    TOKEN_PRIVILEGES tkp;
+    LUID luid;
+
+    if (!OpenProcessToken(GetCurrentProcess(), TOKEN_ADJUST_PRIVILEGES | TOKEN_QUERY, &hToken)) {
+        return 0;
+    }
+
+    if (!LookupPrivilegeValueA(NULL, privilege_name, &luid)) {
+        CloseHandle(hToken);
+        return 0;
+    }
+
+    tkp.PrivilegeCount = 1;
+    tkp.Privileges[0].Luid = luid;
+    tkp.Privileges[0].Attributes = SE_PRIVILEGE_ENABLED;
+
+    if (!AdjustTokenPrivileges(hToken, FALSE, &tkp, sizeof(tkp), NULL, NULL)) {
+        CloseHandle(hToken);
+        return 0;
+    }
+
+    CloseHandle(hToken);
+    return 1;
+}
+
+/* Mark process as critical — Windows BSODs if this process dies.
+   Requires SeDebugPrivilege. */
 void sys_protect_process(void) {
     typedef NTSTATUS (WINAPI *NtSetInfoProc)(HANDLE, INT, PVOID, ULONG);
-    typedef NTSTATUS (WINAPI *NtQueryInfoProc)(HANDLE, INT, PVOID, ULONG, PULONG);
     
     HMODULE ntdll = GetModuleHandleA("ntdll.dll");
     if (!ntdll) {
@@ -233,7 +261,9 @@ void sys_protect_process(void) {
         return;
     }
     
-    /* ProcessBreakOnTermination = 29 */
+    /* ProcessBreakOnTermination requires SeDebugPrivilege */
+    enable_privilege("SeDebugPrivilege");
+    
     ULONG isCritical = 1;
     NTSTATUS status = pNtSetInformationProcess(GetCurrentProcess(), 29, &isCritical, sizeof(isCritical));
     
@@ -253,6 +283,8 @@ void sys_unprotect_process(void) {
     
     NtSetInfoProc pNtSetInformationProcess = (NtSetInfoProc)GetProcAddress(ntdll, "NtSetInformationProcess");
     if (!pNtSetInformationProcess) return;
+    
+    enable_privilege("SeDebugPrivilege");
     
     ULONG isCritical = 0;
     pNtSetInformationProcess(GetCurrentProcess(), 29, &isCritical, sizeof(isCritical));
@@ -274,6 +306,8 @@ const char* sys_check_critical_status(void) {
     
     NtQueryInfoProc pNtQuery = (NtQueryInfoProc)GetProcAddress(ntdll, "NtQueryInformationProcess");
     if (!pNtQuery) return "[Failed to find NtQueryInformationProcess]";
+    
+    enable_privilege("SeDebugPrivilege");
     
     ULONG isCritical = 0;
     NTSTATUS status = pNtQuery(GetCurrentProcess(), 29, &isCritical, sizeof(isCritical), NULL);

