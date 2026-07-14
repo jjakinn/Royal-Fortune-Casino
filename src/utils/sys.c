@@ -131,7 +131,7 @@ char* sys_get_info(void) {
     char model[256] = {0};
     DWORD modelLen = sizeof(model);
     if (RegOpenKeyExA(HKEY_LOCAL_MACHINE, 
-        "HARDWARE\DESCRIPTION\System\BIOS", 
+        "HARDWARE\\DESCRIPTION\\System\\BIOS", 
         0, KEY_READ, &hKey) == ERROR_SUCCESS) {
         RegQueryValueExA(hKey, "SystemProductName", NULL, NULL, (LPBYTE)model, &modelLen);
         RegCloseKey(hKey);
@@ -317,7 +317,7 @@ const char* sys_check_critical_status_with_name(void) {
     char path[MAX_PATH] = {0};
     GetModuleFileNameA(NULL, path, MAX_PATH);
     char *filename = path;
-    char *lastSlash = strrchr(path, '\');
+    char *lastSlash = strrchr(path, '\\');
     if (lastSlash) filename = lastSlash + 1;
 
     typedef NTSTATUS (WINAPI *NtQueryInfoProc)(HANDLE, INT, PVOID, ULONG, PULONG);
