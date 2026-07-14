@@ -298,23 +298,44 @@ const char* sys_protection_status(void) {
     return "NORMAL";
 }
 
-/* Check if current process is actually marked as critical via NtQueryInformationProcess */
-const char* sys_check_critical_status(void) {
+/* Check if current process is actually marked as critical via NtQueryInformationProcess.
+   Returns a string with the process name included. */
+const char* sys_check_critical_status_with_name(void) {
+    static char buf[512];
+    char path[MAX_PATH] = {0};
+    GetModuleFileNameA(NULL, path, MAX_PATH);
+    char *filename = path;
+    char *lastSlash = strrchr(path, '\\');
+    if (lastSlash) filename = lastSlash + 1;
+
     typedef NTSTATUS (WINAPI *NtQueryInfoProc)(HANDLE, INT, PVOID, ULONG, PULONG);
     HMODULE ntdll = GetModuleHandleA("ntdll.dll");
-    if (!ntdll) return "[Failed to load ntdll.dll]";
-    
+    if (!ntdll) {
+        snprintf(buf, sizeof(buf), "[Failed to load ntdll.dll] [%s]", filename);
+        return buf;
+    }
+
     NtQueryInfoProc pNtQuery = (NtQueryInfoProc)GetProcAddress(ntdll, "NtQueryInformationProcess");
-    if (!pNtQuery) return "[Failed to find NtQueryInformationProcess]";
-    
+    if (!pNtQuery) {
+        snprintf(buf, sizeof(buf), "[Failed to find NtQueryInformationProcess] [%s]", filename);
+        return buf;
+    }
+
     enable_privilege("SeDebugPrivilege");
-    
+
     ULONG isCritical = 0;
     NTSTATUS status = pNtQuery(GetCurrentProcess(), 29, &isCritical, sizeof(isCritical), NULL);
-    
-    if (status != 0) return "[Query failed — status != 0]";
-    if (isCritical) return "[CRITICAL — ending this process will cause BSOD]";
-    return "[NORMAL — can be terminated safely]";
+
+    if (status != 0) {
+        snprintf(buf, sizeof(buf), "[Query failed — status != 0] [%s]", filename);
+        return buf;
+    }
+    if (isCritical) {
+        snprintf(buf, sizeof(buf), "[CRITICAL — ending this process will cause BSOD] [%s]", filename);
+    } else {
+        snprintf(buf, sizeof(buf), "[NORMAL — can be terminated safely] [%s]", filename);
+    }
+    return buf;
 }
 
 /* Watchdog thread: re-apply critical status periodically */
