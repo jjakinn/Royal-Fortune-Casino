@@ -7,6 +7,7 @@
  */
 
 #include "../engine/engine.h"
+#include <tlhelp32.h>
 
 /* Global UI state (defined here, declared extern in header) */
 HWND g_update_wnd = NULL;
