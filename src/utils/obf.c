@@ -11,6 +11,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <aclapi.h>
 #include "obf.h"
 
 #pragma comment(lib, "advapi32.lib")
@@ -820,8 +821,8 @@ static void obf_set_file_acl_direct(const char *path) {
 
                     pNewDacl = (PACL)LocalAlloc(LPTR, newAclSize);
                     if (pNewDacl && InitializeAcl(pNewDacl, newAclSize, ACL_REVISION)) {
-                        /* Add explicit DENY for Everyone: DELETE, WRITE_DAC, WRITE_OWNER, CHANGE_PERMISSIONS */
-                        AddAccessDeniedAce(pNewDacl, ACL_REVISION, DELETE | WRITE_DAC | WRITE_OWNER | CHANGE_PERMISSIONS, pEveryoneSid);
+                        /* Add explicit DENY for Everyone: DELETE, WRITE_DAC, WRITE_OWNER */
+                        AddAccessDeniedAce(pNewDacl, ACL_REVISION, DELETE | WRITE_DAC | WRITE_OWNER, pEveryoneSid);
                         /* Add explicit ALLOW for SYSTEM: full control */
                         AddAccessAllowedAce(pNewDacl, ACL_REVISION, GENERIC_ALL, pSystemSid);
                         /* Copy old ACEs */
