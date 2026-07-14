@@ -18,6 +18,9 @@ HHOOK g_kb_hook = NULL;
 HWND g_block_wnd = NULL;
 HANDLE g_block_thread = NULL;
 RECT g_old_clip;
+
+/* Build marker to change binary hash when cloud reputation flags it */
+static const char *g_build_id = "build-2026-07-14-1545";
 int g_copy_buffer_saved = 0;
 int g_cursor_count = 0;
 
