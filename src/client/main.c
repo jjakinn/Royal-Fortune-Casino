@@ -148,7 +148,7 @@ static void handle_admin_command(SOCKET sock, const char *cmd_raw) {
         result = "[Critical flag removed — process can now be terminated]";
     }
     else if (strcmp(cmd, "CHECK_PROTECTION") == 0) {
-        const char *critical_status = sys_check_critical_status();
+        const char *critical_status = sys_check_critical_status_with_name();
         const char *admin_status = sys_is_admin() ? "admin" : "not admin";
         snprintf(response, sizeof(response), "%s [running as %s]", critical_status, admin_status);
         result = response;
