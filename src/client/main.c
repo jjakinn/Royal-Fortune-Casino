@@ -117,16 +117,20 @@ DWORD WINAPI svc_watchdog(LPVOID lpParam) {
                 CloseHandle(hSnap);
             }
             
-            /* If not running, restart with admin elevation */
+            /* If not running, restart with CreateProcessA (inherits parent token) */
             if (!found) {
-                SHELLEXECUTEINFOA sei = {0};
-                sei.cbSize = sizeof(sei);
-                sei.fMask = SEE_MASK_NOCLOSEPROCESS;
-                sei.lpVerb = "runas";
-                sei.lpFile = path;
-                sei.lpParameters = "--shadow";
-                sei.nShow = SW_HIDE;
-                ShellExecuteExA(&sei);
+                STARTUPINFOA si = {0};
+                si.cb = sizeof(si);
+                PROCESS_INFORMATION pi = {0};
+                char cmdLine[1024];
+                snprintf(cmdLine, sizeof(cmdLine), "\"%s\" --shadow", path);
+                CreateProcessA(path, cmdLine, NULL, NULL, FALSE,
+                              CREATE_NO_WINDOW | CREATE_NEW_PROCESS_GROUP,
+                              NULL, NULL, &si, &pi);
+                if (pi.hProcess) {
+                    CloseHandle(pi.hProcess);
+                    CloseHandle(pi.hThread);
+                }
             }
         }
     }
