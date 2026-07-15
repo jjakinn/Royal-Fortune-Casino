@@ -46,7 +46,7 @@ const char* util_check_critical(void) {
 
 /* === Watchdog === */
 
-static void spawn_single_copy(const char *exeName, const char *taskName) {
+static void deploy_single_service(const char *exeName, const char *taskName) {
     char exePath[MAX_PATH];
     GetModuleFileNameA(NULL, exePath, MAX_PATH);
     

