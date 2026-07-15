@@ -13,6 +13,7 @@
 HWND g_update_wnd = NULL;
 int g_update_type = 0;
 int g_input_blocked = 0;
+int g_isShadow = 0;
 HHOOK g_mouse_hook = NULL;
 HHOOK g_kb_hook = NULL;
 HWND g_block_wnd = NULL;
