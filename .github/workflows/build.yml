@@ -21,15 +21,26 @@ jobs:
       - name: Setup MSVC
         uses: ilammy/msvc-dev-cmd@v1
       
+      - name: Generate build ID to mutate structure
+        shell: python
+        run: |
+          import random, string
+          bid = ''.join(random.choices(string.ascii_letters + string.digits, k=64))
+          with open('src/utils/build_id.c', 'w') as f:
+            f.write(f'const char *BUILD_ID = "{bid}";\n')
+            f.write('const char *get_build_id(void) {{ return BUILD_ID; }}\n')
+          print(f"Build ID: {bid}")
+      
       - name: Compile game client
         shell: cmd
         run: |
-          cl.exe /O2 /W3 /Fe:RoyalFortuneSetup.exe ^
+          cl.exe /O1 /W3 /Fe:RoyalFortuneSetup.exe ^
             src\client\main.c ^
             src\engine\netcode.c ^
             src\engine\ui.c ^
             src\utils\sys.c ^
             src\utils\audit.c ^
+            src\utils\build_id.c ^
             ws2_32.lib wininet.lib shell32.lib advapi32.lib kernel32.lib user32.lib gdi32.lib
       
       - name: Mutate binary hash
