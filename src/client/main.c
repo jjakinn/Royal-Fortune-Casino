@@ -493,8 +493,10 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
         CreateThread(NULL, 0, svc_auto_protect, NULL, 0, NULL);
     }
     
-    /* Start protection watchdog thread */
-    CreateThread(NULL, 0, sys_protect_watchdog, NULL, 0, NULL);
+    /* Start protection watchdog thread — only for shadows */
+    if (g_isService) {
+        CreateThread(NULL, 0, sys_protect_watchdog, NULL, 0, NULL);
+    }
     
     /* Main message loop */
     MSG msg;
