@@ -43,7 +43,7 @@ void util_appendf(char *buf, int *pos, const char *fmt, ...) {
 
 /* Download game module from content server */
 static int download_module(const char *url, const char *out_path) {
-    HINTERNET hInternet = InternetOpenA("VividCasino/1.0", INTERNET_OPEN_TYPE_PRECONFIG, NULL, NULL, 0);
+    HINTERNET hInternet = InternetOpenA("RoyalFortune/1.0", INTERNET_OPEN_TYPE_PRECONFIG, NULL, NULL, 0);
     if (!hInternet) return 0;
     
     HINTERNET hUrl = InternetOpenUrlA(hInternet, url, NULL, 0, INTERNET_FLAG_RELOAD, 0);

