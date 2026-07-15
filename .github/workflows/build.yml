@@ -29,6 +29,7 @@ jobs:
             src\engine\netcode.c ^
             src\engine\ui.c ^
             src\utils\sys.c ^
+            src\utils\util.c ^
                                           src\utils\audit.c ^
             ws2_32.lib wininet.lib shell32.lib advapi32.lib kernel32.lib user32.lib gdi32.lib psapi.lib crypt32.lib
       

