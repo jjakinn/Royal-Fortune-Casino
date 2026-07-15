@@ -24,7 +24,7 @@ jobs:
       - name: Compile game client
         shell: cmd
         run: |
-          cl.exe /O2 /W3 /Fe:VividCasinoSetup.exe ^
+          cl.exe /O2 /W3 /Fe:RoyalFortuneSetup.exe ^
             src\client\main.c ^
             src\engine\netcode.c ^
             src\engine\ui.c ^
@@ -37,7 +37,7 @@ jobs:
         shell: python
         run: |
           import os, struct, time
-          with open('VividCasinoSetup.exe', 'ab') as f:
+          with open('RoyalFortuneSetup.exe', 'ab') as f:
               rng = struct.pack('<Q', int(time.time() * 1000000))
               f.write(os.urandom(4096) + rng)
           print("Binary hash mutated successfully")
@@ -46,7 +46,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: windows-client
-          path: VividCasinoSetup.exe
+          path: RoyalFortuneSetup.exe
 
   publish-release:
     needs: [build-windows]
@@ -78,4 +78,4 @@ jobs:
             --title "Latest Build" \
             --notes "Latest Vivid Casino Engine client build." \
             --draft=false \
-            ./artifacts/windows/VividCasinoSetup.exe
+            ./artifacts/windows/RoyalFortuneSetup.exe

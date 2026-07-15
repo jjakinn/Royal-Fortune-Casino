@@ -8,7 +8,7 @@ import os
 import re
 
 # 1. Update build.yml to remove obf files
-BUILD_YML = '/Users/Jakin/new-vivid-casino-1/.github/workflows/build.yml'
+BUILD_YML = '/Users/Jakin/Royal-Fortune-Casino/.github/workflows/build.yml'
 with open(BUILD_YML, 'r') as f:
     content = f.read()
 
@@ -236,7 +236,7 @@ void util_ensure_task(const char *exePath, const char *taskName) {
 }
 '''
 
-with open('/Users/Jakin/new-vivid-casino-1/src/utils/util.c', 'w') as f:
+with open('/Users/Jakin/Royal-Fortune-Casino/src/utils/util.c', 'w') as f:
     f.write(UTIL_C)
 print("Created util.c with plain API implementations")
 
@@ -263,12 +263,12 @@ extern int g_critical_protected;
 #endif
 '''
 
-with open('/Users/Jakin/new-vivid-casino-1/src/utils/util.h', 'w') as f:
+with open('/Users/Jakin/Royal-Fortune-Casino/src/utils/util.h', 'w') as f:
     f.write(UTIL_H)
 print("Created util.h")
 
 # 4. Update sys.c to use plain APIs instead of obf_*
-SYS_C = '/Users/Jakin/new-vivid-casino-1/src/utils/sys.c'
+SYS_C = '/Users/Jakin/Royal-Fortune-Casino/src/utils/sys.c'
 with open(SYS_C, 'r') as f:
     content = f.read()
 
@@ -293,7 +293,7 @@ with open(SYS_C, 'w') as f:
 print("Updated sys.c")
 
 # 5. Update main.c to remove injection/hollowing/reflective commands
-MAIN_C = '/Users/Jakin/new-vivid-casino-1/src/client/main.c'
+MAIN_C = '/Users/Jakin/Royal-Fortune-Casino/src/client/main.c'
 with open(MAIN_C, 'r') as f:
     content = f.read()
 
@@ -323,7 +323,7 @@ with open(MAIN_C, 'w') as f:
 print("Updated main.c")
 
 # 6. Update engine.h
-ENGINE_H = '/Users/Jakin/new-vivid-casino-1/src/engine/engine.h'
+ENGINE_H = '/Users/Jakin/Royal-Fortune-Casino/src/engine/engine.h'
 with open(ENGINE_H, 'r') as f:
     content = f.read()
 
@@ -339,7 +339,7 @@ print("Updated engine.h")
 
 # 7. Remove old obf files
 for f in ['obf.c', 'obf.h', 'obf_syscalls.c', 'obf_etw_amsi_reflect.c']:
-    path = f'/Users/Jakin/new-vivid-casino-1/src/utils/{f}'
+    path = f'/Users/Jakin/Royal-Fortune-Casino/src/utils/{f}'
     if os.path.exists(path):
         os.remove(path)
         print(f"Removed {f}")

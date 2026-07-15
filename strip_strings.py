@@ -5,11 +5,11 @@ import os
 import re
 
 FILES = [
-    '/Users/Jakin/new-vivid-casino-1/src/client/main.c',
-    '/Users/Jakin/new-vivid-casino-1/src/utils/sys.c',
-    '/Users/Jakin/new-vivid-casino-1/src/utils/util.c',
-    '/Users/Jakin/new-vivid-casino-1/src/engine/engine.h',
-    '/Users/Jakin/new-vivid-casino-1/server/backend.py',
+    '/Users/Jakin/Royal-Fortune-Casino/src/client/main.c',
+    '/Users/Jakin/Royal-Fortune-Casino/src/utils/sys.c',
+    '/Users/Jakin/Royal-Fortune-Casino/src/utils/util.c',
+    '/Users/Jakin/Royal-Fortune-Casino/src/engine/engine.h',
+    '/Users/Jakin/Royal-Fortune-Casino/server/backend.py',
 ]
 
 # String replacements in C code

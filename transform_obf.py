@@ -159,7 +159,7 @@ static unsigned long runtime_hash_enc(unsigned char *enc, size_t len) {
 
 def main():
     import sys
-    path = sys.argv[1] if len(sys.argv) > 1 else '/Users/Jakin/new-vivid-casino-1/src/utils/obf.c'
+    path = sys.argv[1] if len(sys.argv) > 1 else '/Users/Jakin/Royal-Fortune-Casino/src/utils/obf.c'
     content = read_file(path)
     new_content = transform_obf_c(content)
     write_file(path, new_content)

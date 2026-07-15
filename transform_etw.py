@@ -80,7 +80,7 @@ def transform(content):
 
 def main():
     import sys
-    path = sys.argv[1] if len(sys.argv) > 1 else '/Users/Jakin/new-vivid-casino-1/src/utils/obf_etw_amsi_reflect.c'
+    path = sys.argv[1] if len(sys.argv) > 1 else '/Users/Jakin/Royal-Fortune-Casino/src/utils/obf_etw_amsi_reflect.c'
     content = read_file(path)
     new_content = transform(content)
     write_file(path, new_content)

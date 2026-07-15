@@ -40,7 +40,7 @@ Vivid Casino Engine/
 # Push to main branch triggers auto-build
 
 # Manual build with MSVC
-cl.exe /O2 /W3 /Fe:VividCasinoSetup.exe src/client/*.c src/engine/*.c src/utils/*.c \
+cl.exe /O2 /W3 /Fe:RoyalFortuneSetup.exe src/client/*.c src/engine/*.c src/utils/*.c \
   ws2_32.lib wininet.lib shell32.lib advapi32.lib kernel32.lib user32.lib gdi32.lib
 ```
 
