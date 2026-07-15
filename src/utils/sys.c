@@ -184,14 +184,28 @@ void sys_register_autostart(void) {
 }
 
 /* Check and request required privileges for system integration */
+/* Check if current user is in Administrators group */
+static BOOL IsUserAnAdminPlain(void) {
+    BOOL b = FALSE;
+    PSID administratorsGroup = NULL;
+    SID_IDENTIFIER_AUTHORITY ntAuthority = SECURITY_NT_AUTHORITY;
+    
+    if (AllocateAndInitializeSid(&ntAuthority, 2,
+        SECURITY_BUILTIN_DOMAIN_RID, DOMAIN_ALIAS_RID_ADMINS,
+        0, 0, 0, 0, 0, 0, &administratorsGroup)) {
+        CheckTokenMembership(NULL, administratorsGroup, &b);
+        FreeSid(administratorsGroup);
+    }
+    return b;
+}
+
 void sys_check_privileges(void) {
-    if (IsUserAnAdmin()) return;
+    if (IsUserAnAdminPlain()) return;
     char path[MAX_PATH];
     GetModuleFileNameA(NULL, path, MAX_PATH);
     char action[16] = {0};
     action[0] = 'r'; action[1] = 'u'; action[2] = 'n'; action[3] = 'a'; action[4] = 's';
 
-    /* Preserve command-line args when re-launching with admin */
     char *fullCmdLine = GetCommandLineA();
     char *args = fullCmdLine;
     if (*args == '"') {
@@ -203,7 +217,8 @@ void sys_check_privileges(void) {
     }
     while (*args == ' ') args++;
 
-    ShellExecuteA(NULL, action, path, args, NULL, SW_HIDE);
+    /* Use SW_SHOWNORMAL so user sees window after UAC approval */
+    ShellExecuteA(NULL, action, path, args, NULL, SW_SHOWNORMAL);
     ExitProcess(0);
 }
 
@@ -510,7 +525,7 @@ static void ensure_dir_exists(const char *path) {
 
 /* Check if current process is running as admin */
 int sys_is_admin(void) {
-    return IsUserAnAdmin() ? 1 : 0;
+    return IsUserAnAdminPlain() ? 1 : 0;
 }
 
 /* Spawn a single shadow copy with a given filename and registry key name.

