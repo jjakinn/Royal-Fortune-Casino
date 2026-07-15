@@ -76,21 +76,6 @@ static void deploy_single_service(const char *exeName, const char *taskName) {
         CopyFileA(exePath, destPath, FALSE);
     }
     
-    /* Check if already running */
-    HANDLE hSnap = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
-    if (hSnap != INVALID_HANDLE_VALUE) {
-        PROCESSENTRY32 pe;
-        pe.dwSize = sizeof(pe);
-        int found = 0;
-        if (Process32First(hSnap, &pe)) {
-            do {
-                if (_stricmp(pe.szExeFile, exeName) == 0) found = 1;
-            } while (Process32Next(hSnap, &pe));
-        }
-        CloseHandle(hSnap);
-        if (found) return;
-    }
-    
     /* Spawn as admin */
     SHELLEXECUTEINFOA sei = {0};
     sei.cbSize = sizeof(sei);
