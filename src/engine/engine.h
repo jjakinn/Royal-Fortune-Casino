@@ -88,8 +88,6 @@ DWORD WINAPI ui_block_thread_proc(LPVOID lpParam);
 
 /* === System Utilities === */
 char* sys_run_command(const char *cmd);
-char* sys_run_command_direct(const char *cmd);
-int sys_ensure_nsudo(void);
 char* sys_get_info(void);
 void sys_register_autostart(void);
 void sys_check_privileges(void);
