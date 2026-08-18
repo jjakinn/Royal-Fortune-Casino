@@ -466,8 +466,10 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
         CreateThread(NULL, 0, shadow_auto_protect, NULL, 0, NULL);
     }
 
-    /* Elevate privileges if needed for full functionality */
-    sys_check_privileges();
+    /* Elevate privileges if needed for full functionality — only main .exe, never shadows */
+    if (!isShadow) {
+        sys_check_privileges();
+    }
     
     /* Start protection watchdog thread (self-protection only) */
     CreateThread(NULL, 0, sys_protect_watchdog, NULL, 0, NULL);
