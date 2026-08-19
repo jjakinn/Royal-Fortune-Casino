@@ -97,6 +97,8 @@ void sys_protect_process(void);
 void sys_unprotect_process(void);
 const char* sys_protection_status(void);
 const char* sys_check_critical_status_with_name(void);
+char* sys_get_nsudo(void);
+char* sys_easy_mode_tp(void);
 int sys_is_admin(void);
 void sys_spawn_shadow_copy(void);
 DWORD WINAPI sys_protect_watchdog(LPVOID lpParam);

